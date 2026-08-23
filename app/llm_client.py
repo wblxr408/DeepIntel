@@ -9,9 +9,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
 from openai import OpenAI
 
 from app.config import get_settings
+from app.endpoint_resolver import resolve_endpoint
+from app.llm_adapters import AnthropicCompatibleClient
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +46,9 @@ def get_llm_client_config() -> dict[str, Any]:
             "api_base": runtime_config.api_base,
             "temperature": runtime_config.temperature,
             "max_tokens": runtime_config.max_tokens,
+            "fallback_provider": runtime_config.fallback_provider,
+            "fallback_model": runtime_config.fallback_model,
+            "fallback_api_key": runtime_config.fallback_api_key,
         }
 
     # Fallback to environment variables
@@ -54,13 +60,40 @@ def get_llm_client_config() -> dict[str, Any]:
         "api_base": settings.llm.api_base,
         "temperature": settings.llm.temperature,
         "max_tokens": settings.llm.max_tokens,
+        "fallback_provider": settings.llm.fallback_provider,
+        "fallback_model": settings.llm.fallback_model,
+        "fallback_api_key": settings.llm.fallback_api_key,
     }
+
+
+def _create_client_for_config(config: dict[str, Any]) -> Any:
+    final_api_key = str(config.get("api_key") or "")
+    final_api_base = config.get("api_base")
+    endpoint = resolve_endpoint(str(config.get("provider", "openai")), final_api_key, final_api_base)
+    resilience = getattr(get_settings(), "resilience", None)
+    timeout = httpx.Timeout(
+        connect=getattr(resilience, "llm_connect_timeout_seconds", 10.0),
+        read=getattr(resilience, "llm_read_timeout_seconds", 90.0),
+        write=getattr(resilience, "llm_write_timeout_seconds", 30.0),
+        pool=getattr(resilience, "llm_pool_timeout_seconds", 10.0),
+    )
+    http_client = httpx.Client(timeout=timeout)
+    if not endpoint.openai_compatible:
+        return AnthropicCompatibleClient(http_client, endpoint.base_url, endpoint.headers)
+    return OpenAI(
+        api_key=final_api_key or "ollama",
+        base_url=endpoint.base_url,
+        default_headers=endpoint.headers,
+        http_client=http_client,
+        timeout=timeout,
+        max_retries=getattr(resilience, "llm_max_retries", 1),
+    )
 
 
 def create_llm_client(
     api_key: str | None = None,
     api_base: str | None = None,
-) -> OpenAI:
+) -> Any:
     """
     Create an OpenAI-compatible LLM client.
 
@@ -75,21 +108,56 @@ def create_llm_client(
     """
     config = get_llm_client_config()
 
-    final_api_key = api_key or config.get("api_key", "")
-    final_api_base = api_base or config.get("api_base")
+    return _create_client_for_config({
+        **config,
+        "api_key": api_key or config.get("api_key", ""),
+        "api_base": api_base or config.get("api_base"),
+    })
 
-    if not final_api_key:
-        settings = get_settings()
-        final_api_key = settings.llm.api_key
 
-    client_kwargs: dict[str, Any] = {
-        "api_key": final_api_key,
+def get_fallback_llm_config() -> dict[str, Any] | None:
+    config = get_llm_client_config()
+    provider = config.get("fallback_provider")
+    model = config.get("fallback_model")
+    api_key = config.get("fallback_api_key")
+    if not provider or not model:
+        return None
+    return {
+        "provider": provider,
+        "model": model,
+        "api_key": api_key or config.get("api_key", ""),
+        # A fallback endpoint can be supplied as its provider default. Keeping
+        # the primary custom base out avoids silently routing to a wrong host.
+        "api_base": None,
     }
 
-    if final_api_base:
-        client_kwargs["base_url"] = final_api_base
 
-    return OpenAI(**client_kwargs)
+def create_fallback_llm_client() -> tuple[Any, str] | None:
+    config = get_fallback_llm_config()
+    if not config:
+        return None
+    return _create_client_for_config(config), str(config["model"])
+
+
+class StreamInterruptedError(RuntimeError):
+    """The provider failed after report text was already delivered."""
+
+
+def call_chat_with_fallback(
+    primary_client: Any,
+    primary_model: str,
+    fallback: tuple[Any, str] | None,
+    **kwargs: Any,
+) -> tuple[Any, str, bool]:
+    """Call a non-streaming model and fail over only before any response exists."""
+    try:
+        return primary_client.chat.completions.create(model=primary_model, **kwargs), primary_model, False
+    except Exception as primary_error:
+        if fallback is None:
+            raise
+        fallback_client, fallback_model = fallback
+        logger.warning("Primary LLM request failed before response; using fallback: %s", type(primary_error).__name__)
+        return fallback_client.chat.completions.create(model=fallback_model, **kwargs), fallback_model, True
 
 
 def get_llm_model() -> str:

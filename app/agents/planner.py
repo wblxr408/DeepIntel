@@ -22,17 +22,26 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from app.config import get_settings
-from app.guardrails import TaskIntent, build_prompt_profile_message, build_guardrail_decision
-from app.llm_client import collect_usage_metrics
 from app.graph.state import (
     DAGDefinition,
-    PlanNode,
     PlanEdge,
+    PlanNode,
     StepStatus,
 )
+from app.guardrails import (
+    TaskIntent,
+    build_guardrail_decision,
+    build_prompt_profile_message,
+)
+from app.llm_client import (
+    call_chat_with_fallback,
+    collect_usage_metrics,
+    create_fallback_llm_client,
+)
+from app.security.prompt_security import untrusted_context
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -240,10 +249,9 @@ Return a JSON object with dag_name, nodes, and edges."""
             return self._fact_lookup_dag(query)
 
         system_prompt = f"{build_prompt_profile_message(decision, query)}\n\n{self.SYSTEM_PROMPT}"
-        if skill_prompt:
-            system_prompt = f"{system_prompt}\n\n## Active Skill Context\n{skill_prompt.strip()}"
-
         user_prompt = self.USER_TEMPLATE.format(query=query)
+        if skill_prompt:
+            user_prompt = f"{user_prompt}\n\n{untrusted_context('skill_content', skill_prompt)}"
         if planning_hints:
             user_prompt = f"{user_prompt}\n\nSession Planning Hints:\n{planning_hints}"
         if planner_hints:
@@ -268,10 +276,17 @@ Return a JSON object with dag_name, nodes, and edges."""
             if self._is_openai_compatible():
                 create_kwargs["response_format"] = {"type": "json_object"}
 
-            response = self.client.chat.completions.create(**create_kwargs)
+            response, response_model, fallback_used = call_chat_with_fallback(
+                self.client,
+                self.model,
+                create_fallback_llm_client(),
+                **{key: value for key, value in create_kwargs.items() if key != "model"},
+            )
+            if fallback_used:
+                self.model = response_model
             self.last_usage = collect_usage_metrics(
                 response=response,
-                model=self.model,
+                model=response_model,
                 messages=messages,
                 completion_text=response.choices[0].message.content if response.choices else "",
             )
@@ -293,7 +308,7 @@ Return a JSON object with dag_name, nodes, and edges."""
             )
             return dag
 
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.error(f"Planner error: {e}")
             self.last_usage = None
             return self._fallback_dag(query)
@@ -324,7 +339,7 @@ Return a JSON object with dag_name, nodes, and edges."""
             try:
                 node = PlanNode.model_validate(node_data)
                 nodes.append(node)
-            except Exception as e:
+            except (OSError, RuntimeError, TypeError, ValueError, KeyError, AttributeError) as e:
                 logger.warning(f"Failed to parse node {i}: {e}, skipping")
                 continue
 
@@ -337,7 +352,7 @@ Return a JSON object with dag_name, nodes, and edges."""
             try:
                 edge = PlanEdge.model_validate(edge_data)
                 edges.append(edge)
-            except Exception as e:
+            except (OSError, RuntimeError, TypeError, ValueError, KeyError, AttributeError) as e:
                 logger.warning(f"Failed to parse edge: {e}, skipping")
                 continue
 

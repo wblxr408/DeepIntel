@@ -5,10 +5,12 @@ import hashlib
 import json
 import re
 from collections import OrderedDict, defaultdict
-from datetime import datetime
-from typing import Any
+
+from pydantic import ValidationError
+from redis.exceptions import RedisError
 
 from app.config import get_settings
+from app.core.time import utc_now_naive
 from app.db.connection import get_redis
 from app.skills.models import (
     ResolvedSkillRef,
@@ -28,8 +30,10 @@ from app.skills.service import (
 
 
 class SkillRegistry:
-    def __init__(self) -> None:
+    def __init__(self, owner_id: str | None = None) -> None:
+        self._owner_id = owner_id
         self._lock = asyncio.Lock()
+        self._loaded = False
         self._meta_by_id: dict[str, SkillMetaRecord] = {}
         self._slug_to_id: dict[str, str] = {}
         self._term_index: dict[str, set[str]] = defaultdict(set)
@@ -40,9 +44,19 @@ class SkillRegistry:
         self._version_token: str = "empty"
 
     async def load(self) -> None:
+        if self._owner_id is None:
+            # A registry without a principal is used only during process startup.
+            # Never load another owner's data into a process-global cache.
+            self._rebuild_indexes([])
+            return
         async with self._lock:
-            metas = await list_skill_meta(include_deleted=False)
+            metas = await list_skill_meta(self._owner_id, include_deleted=False)
             self._rebuild_indexes(metas)
+            self._loaded = True
+
+    async def ensure_loaded(self) -> None:
+        if not self._loaded:
+            await self.load()
 
     async def upsert(self, skill_record: SkillRecord) -> None:
         async with self._lock:
@@ -74,11 +88,12 @@ class SkillRegistry:
         return self._meta_by_id.get(skill_id)
 
     async def get_skill_record(self, skill_id: str) -> SkillRecord:
+        self._require_owner()
         meta = self.get_meta_by_id(skill_id)
         if meta is None:
             meta = await self._get_cached_meta_l2(skill_id)
         if meta is None:
-            meta = await get_skill_meta_by_id(skill_id)
+            meta = await get_skill_meta_by_id(skill_id, self._owner_id)
         if meta is not None and not meta.is_deleted and meta.metadata.enabled:
             async with self._lock:
                 if skill_id not in self._meta_by_id:
@@ -97,6 +112,9 @@ class SkillRegistry:
         tenant_id: str | None = None,
         project_id: str | None = None,
     ) -> SessionSkillSelection:
+        self._require_owner()
+        if not self._loaded and not self._meta_by_id:
+            await self.load()
         enabled_overrides = list(dict.fromkeys(manually_enabled_skill_ids or []))
         disabled_overrides = set(manually_disabled_skill_ids or [])
         match_cache_key = self._match_cache_key(
@@ -164,7 +182,7 @@ class SkillRegistry:
                 "project_id": project_id,
             },
             truncated_skill_count=truncated_skill_count,
-            snapshot_created_at=datetime.utcnow().isoformat(),
+            snapshot_created_at=utc_now_naive().isoformat(),
             match_cache_key=match_cache_key,
             registry_revision=self._revision,
         )
@@ -266,9 +284,12 @@ class SkillRegistry:
     ) -> bool:
         if meta.is_deleted or not meta.metadata.enabled:
             return False
-        if meta.metadata.scope == "tenant":
-            if meta.metadata.tenant_id and meta.metadata.tenant_id != tenant_id:
-                return False
+        if (
+            meta.metadata.scope == "tenant"
+            and meta.metadata.tenant_id
+            and meta.metadata.tenant_id != tenant_id
+        ):
+            return False
         if meta.metadata.scope == "project":
             if meta.metadata.tenant_id and meta.metadata.tenant_id != tenant_id:
                 return False
@@ -397,7 +418,7 @@ class SkillRegistry:
             missing_refs.append(ref)
 
         if missing_refs:
-            loaded = await get_skill_content_batch(missing_refs)
+            loaded = await get_skill_content_batch(missing_refs, self._owner_id)
             for ref, content in loaded.items():
                 self._remember_content(content)
                 results[ref] = content
@@ -415,7 +436,8 @@ class SkillRegistry:
         if l2 is not None:
             self._remember_content(l2)
             return l2
-        content = await get_skill_content(skill_id, version)
+        self._require_owner()
+        content = await get_skill_content(skill_id, version, self._owner_id)
         self._remember_content(content)
         await self._cache_content_l2(content)
         return content
@@ -465,13 +487,13 @@ class SkillRegistry:
             return None
         try:
             value = await redis_client.get(cache_key)
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return None
         if not value:
             return None
         try:
             return SessionSkillSelection.model_validate(json.loads(value))
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return None
 
     async def _set_match_cache(self, cache_key: str, selection: SessionSkillSelection) -> None:
@@ -484,7 +506,7 @@ class SkillRegistry:
                 selection.model_dump_json(),
                 ex=get_settings().skills.match_cache_ttl,
             )
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return
 
     async def _cache_content_l2(self, content: SkillContentRecord) -> None:
@@ -497,7 +519,7 @@ class SkillRegistry:
                 content.model_dump_json(),
                 ex=get_settings().skills.content_cache_ttl,
             )
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return
 
     async def _cache_meta_l2(self, meta: SkillMetaRecord) -> None:
@@ -510,7 +532,7 @@ class SkillRegistry:
         try:
             await redis_client.set(versioned_key, meta.model_dump_json(), ex=ttl)
             await redis_client.set(pointer_key, str(meta.version), ex=ttl)
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return
 
     async def _get_cached_meta_l2(self, skill_id: str) -> SkillMetaRecord | None:
@@ -522,13 +544,13 @@ class SkillRegistry:
             if not version:
                 return None
             value = await redis_client.get(self._meta_cache_key(skill_id, int(version)))
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return None
         if not value:
             return None
         try:
             return SkillMetaRecord.model_validate(json.loads(value))
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return None
 
     async def _get_cached_content_l2(self, skill_id: str, version: int) -> SkillContentRecord | None:
@@ -537,13 +559,13 @@ class SkillRegistry:
             return None
         try:
             value = await redis_client.get(self._content_cache_key(skill_id, version))
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return None
         if not value:
             return None
         try:
             return SkillContentRecord.model_validate(json.loads(value))
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return None
 
     async def _invalidate_skill_l2(self, skill_id: str) -> None:
@@ -551,10 +573,10 @@ class SkillRegistry:
         if redis_client is None:
             return
         try:
-            keys = await redis_client.keys(f"skill_content:{skill_id}:*")
+            keys = await redis_client.keys(f"skill_content:{self._owner_id}:{skill_id}:*")
             if keys:
                 await redis_client.delete(*keys)
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return
 
     async def _invalidate_meta_l2(self, skill_id: str) -> None:
@@ -562,27 +584,31 @@ class SkillRegistry:
         if redis_client is None:
             return
         try:
-            keys = await redis_client.keys(f"skill_meta:{skill_id}:*")
+            keys = await redis_client.keys(f"skill_meta:{self._owner_id}:{skill_id}:*")
             if keys:
                 await redis_client.delete(*keys)
             await redis_client.delete(self._meta_pointer_key(skill_id))
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return
 
     async def _get_redis_safe(self):
         try:
             return await get_redis()
-        except Exception:
+        except (OSError, RedisError, RuntimeError, TypeError, ValueError, json.JSONDecodeError, ValidationError):
             return None
 
     def _content_cache_key(self, skill_id: str, version: int) -> str:
-        return f"skill_content:{skill_id}:{version}"
+        return f"skill_content:{self._owner_id}:{skill_id}:{version}"
 
     def _meta_cache_key(self, skill_id: str, version: int) -> str:
-        return f"skill_meta:{skill_id}:{version}"
+        return f"skill_meta:{self._owner_id}:{skill_id}:{version}"
 
     def _meta_pointer_key(self, skill_id: str) -> str:
-        return f"skill_meta_current:{skill_id}"
+        return f"skill_meta_current:{self._owner_id}:{skill_id}"
+
+    def _require_owner(self) -> None:
+        if self._owner_id is None:
+            raise RuntimeError("skill registry requires an owner")
 
 
 def _merge_tool_allowlist(metas: list[SkillMetaRecord]) -> list[str]:
@@ -597,10 +623,10 @@ def _merge_tool_allowlist(metas: list[SkillMetaRecord]) -> list[str]:
 def _merge_prompt_sections(resolved_skills: list[ResolvedSkillRef]) -> dict[str, str]:
     sections = {"overview": [], "prompt": [], "constraints": []}
     for item in resolved_skills:
-        for key in sections:
+        for key, values in sections.items():
             value = item.prompt_sections.get(key, "")
             if value and value.strip():
-                sections[key].append(value.strip())
+                values.append(value.strip())
     return {key: "\n\n".join(values).strip() for key, values in sections.items()}
 
 
@@ -623,8 +649,16 @@ def _agent_hints_from_meta(meta: SkillMetaRecord) -> dict[str, list[str]]:
     return result
 
 
-_skill_registry = SkillRegistry()
+_startup_skill_registry = SkillRegistry()
+_skill_registries: dict[str, SkillRegistry] = {}
 
 
-def get_skill_registry() -> SkillRegistry:
-    return _skill_registry
+def get_skill_registry(owner_id: str | None = None) -> SkillRegistry:
+    """Return an owner-scoped registry; startup gets an intentionally empty registry."""
+    if owner_id is None:
+        return _startup_skill_registry
+    registry = _skill_registries.get(owner_id)
+    if registry is None:
+        registry = SkillRegistry(owner_id)
+        _skill_registries[owner_id] = registry
+    return registry

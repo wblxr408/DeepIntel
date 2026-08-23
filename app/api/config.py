@@ -8,18 +8,22 @@ Configuration is stored in database and overrides environment variables.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Literal, Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+import asyncpg
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from app.config import get_settings, Settings, LLMSettings
+from app.config import get_settings
+from app.core.time import utc_now_naive
 from app.db.connection import get_db_pool
 from app.db.json import dumps_json
+from app.security.auth import Principal, require_principal
+from app.security.crypto import decrypt_secret, encrypt_secret
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1/config", tags=["config"])
+router = APIRouter(prefix="/api/v1/config", tags=["config"], dependencies=[Depends(require_principal)])
+principal_dependency = Depends(require_principal)
 
 
 # ==============================================================
@@ -28,7 +32,7 @@ router = APIRouter(prefix="/api/v1/config", tags=["config"])
 
 class LLMConfigRequest(BaseModel):
     """Request body for updating LLM configuration."""
-    provider: Literal["qwen", "deepseek", "openai"] = Field(
+    provider: Literal["qwen", "deepseek", "openai", "ollama", "anthropic"] = Field(
         ...,
         description="LLM provider: qwen, deepseek, or openai"
     )
@@ -60,7 +64,7 @@ class LLMConfigRequest(BaseModel):
         description="Max tokens for generation"
     )
     # Fallback settings
-    fallback_provider: Literal["qwen", "deepseek", "openai"] | None = Field(
+    fallback_provider: Literal["qwen", "deepseek", "openai", "ollama", "anthropic"] | None = Field(
         default=None,
         description="Fallback provider when primary fails"
     )
@@ -108,7 +112,12 @@ def mask_api_key(api_key: str) -> str:
     return f"{api_key[:8]}...{api_key[-4:]}"
 
 
-async def get_llm_config_from_db() -> dict[str, Any] | None:
+def _llm_config_key(owner_id: str) -> str:
+    """Keep configuration keys unique while preserving owner isolation."""
+    return f"llm:{owner_id}"
+
+
+async def get_llm_config_from_db(owner_id: str) -> dict[str, Any] | None:
     """Get LLM configuration from database."""
     try:
         pool = await get_db_pool()
@@ -117,33 +126,48 @@ async def get_llm_config_from_db() -> dict[str, Any] | None:
                 """
                 SELECT config_data, updated_at
                 FROM system_config
-                WHERE config_key = 'llm'
-                """
+                WHERE owner_id = $1::uuid
+                  AND config_key IN ($2, 'llm')
+                ORDER BY CASE WHEN config_key = $2 THEN 0 ELSE 1 END
+                LIMIT 1
+                """,
+                owner_id,
+                _llm_config_key(owner_id),
             )
             if row:
+                data = dict(row["config_data"] or {})
+                data["api_key"] = decrypt_secret(data.get("api_key"))
+                data["fallback_api_key"] = decrypt_secret(data.get("fallback_api_key"))
                 return {
-                    "data": row["config_data"],
+                    "data": data,
                     "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
                 }
-    except Exception as e:
-        logger.warning(f"Failed to get LLM config from DB: {e}")
+    except (OSError, RuntimeError, ValueError, asyncpg.PostgresError) as exc:
+        logger.warning("Failed to get LLM config from DB: %s", exc)
     return None
 
 
-async def save_llm_config_to_db(config: LLMConfigRequest) -> None:
+async def save_llm_config_to_db(config: LLMConfigRequest, owner_id: str) -> None:
     """Save LLM configuration to database."""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO system_config (config_key, config_data, updated_at)
-            VALUES ('llm', $1::jsonb, $2)
+            INSERT INTO system_config (config_key, config_data, owner_id, updated_at)
+            VALUES ($1, $2::jsonb, $3::uuid, $4)
             ON CONFLICT (config_key) DO UPDATE SET
-                config_data = $1::jsonb,
-                updated_at = $2
+                config_data = $2::jsonb,
+                owner_id = $3::uuid,
+                updated_at = $4
             """,
-            dumps_json(config.model_dump()),
-            datetime.utcnow(),
+            _llm_config_key(owner_id),
+            dumps_json({
+                **config.model_dump(),
+                "api_key": encrypt_secret(config.api_key),
+                "fallback_api_key": encrypt_secret(config.fallback_api_key or ""),
+            }),
+            owner_id,
+            utc_now_naive(),
         )
 
 
@@ -166,12 +190,31 @@ def set_runtime_llm_config(config: LLMConfigRequest) -> None:
     logger.info(f"Runtime LLM config updated: provider={config.provider}, model={config.model}")
 
 
+async def load_runtime_llm_config_from_db() -> None:
+    """Restore encrypted administrator configuration after a process restart."""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        owners = await conn.fetch("SELECT id FROM auth_principals ORDER BY created_at ASC LIMIT 2")
+    # There is exactly one supported administrator today. Do not select an
+    # arbitrary configuration if a future deployment adds more principals.
+    if len(owners) != 1:
+        return
+    db_config = await get_llm_config_from_db(str(owners[0]["id"]))
+    if not db_config:
+        return
+    try:
+        set_runtime_llm_config(LLMConfigRequest.model_validate(db_config["data"]))
+    except Exception as exc:
+        logger.error("Persisted LLM configuration is invalid or cannot be decrypted: %s", type(exc).__name__)
+        raise
+
+
 # ==============================================================
 # API Endpoints
 # ==============================================================
 
 @router.get("/llm", response_model=LLMConfigResponse)
-async def get_llm_config():
+async def get_llm_config(principal: Principal = principal_dependency):
     """
     Get current LLM configuration.
 
@@ -195,7 +238,7 @@ async def get_llm_config():
         )
 
     # Check DB config
-    db_config = await get_llm_config_from_db()
+    db_config = await get_llm_config_from_db(principal.id)
     if db_config:
         data = db_config["data"]
         return LLMConfigResponse(
@@ -228,7 +271,7 @@ async def get_llm_config():
 
 
 @router.post("/llm", response_model=LLMConfigResponse)
-async def update_llm_config(config: LLMConfigRequest):
+async def update_llm_config(config: LLMConfigRequest, principal: Principal = principal_dependency):
     """
     Update LLM configuration.
 
@@ -253,7 +296,7 @@ async def update_llm_config(config: LLMConfigRequest):
             )
 
     # Save to database
-    await save_llm_config_to_db(config)
+    await save_llm_config_to_db(config, principal.id)
 
     # Set runtime config
     set_runtime_llm_config(config)
@@ -268,12 +311,12 @@ async def update_llm_config(config: LLMConfigRequest):
         fallback_provider=config.fallback_provider,
         fallback_model=config.fallback_model,
         has_fallback_api_key=bool(config.fallback_api_key),
-        updated_at=datetime.utcnow().isoformat(),
+        updated_at=utc_now_naive().isoformat(),
     )
 
 
 @router.get("/llm/status", response_model=LLMConfigStatus)
-async def get_llm_status():
+async def get_llm_status(principal: Principal = principal_dependency):
     """
     Get LLM configuration status.
 
@@ -292,7 +335,7 @@ async def get_llm_status():
         model = _runtime_llm_config.model
         has_key = bool(_runtime_llm_config.api_key)
     else:
-        db_config = await get_llm_config_from_db()
+        db_config = await get_llm_config_from_db(principal.id)
         if db_config:
             has_config = True
             data = db_config["data"]
@@ -364,6 +407,22 @@ async def get_available_providers():
                 "api_base_default": "https://api.openai.com/v1",
                 "recommended": False,
             },
+            {
+                "id": "ollama",
+                "name": "Ollama",
+                "description": "本机 OpenAI 兼容模型服务",
+                "models": [],
+                "api_base_default": "http://localhost:11434/v1",
+                "recommended": False,
+            },
+            {
+                "id": "anthropic",
+                "name": "Anthropic",
+                "description": "Claude 原生 Messages API",
+                "models": [],
+                "api_base_default": "https://api.anthropic.com",
+                "recommended": False,
+            },
         ],
         "default": {
             "provider": "qwen",
@@ -373,7 +432,7 @@ async def get_available_providers():
 
 
 @router.delete("/llm")
-async def reset_llm_config():
+async def reset_llm_config(principal: Principal = principal_dependency):
     """
     Reset LLM configuration to environment defaults.
 
@@ -387,10 +446,13 @@ async def reset_llm_config():
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                DELETE FROM system_config WHERE config_key = 'llm'
-                """
+                DELETE FROM system_config
+                WHERE owner_id = $1::uuid AND config_key IN ($2, 'llm')
+                """,
+                principal.id,
+                _llm_config_key(principal.id),
             )
-    except Exception as e:
-        logger.warning(f"Failed to delete LLM config from DB: {e}")
+    except (OSError, RuntimeError, asyncpg.PostgresError) as exc:
+        logger.warning("Failed to delete LLM config from DB: %s", exc)
 
     return {"message": "LLM configuration reset to environment defaults"}

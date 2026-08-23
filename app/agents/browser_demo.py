@@ -25,9 +25,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 
-from app.agents.browser import BrowserAgent, URLDiscovery, SmartScroller, StructuredExtractor
+from app.agents.browser import (
+    BrowserAgent,
+    SmartScroller,
+    StructuredExtractor,
+    URLDiscovery,
+)
 
 
 async def demo_open_and_browse():
@@ -121,9 +125,9 @@ async def demo_structured_extraction():
     print("演示 4: EXTRACT - 结构化数据提取")
     print("=" * 70)
 
-    extractor = StructuredExtractor()
+    StructuredExtractor()
 
-    print(f"""
+    print("""
 Structured Extractor 支持的数据类型:
 
 1. 表格提取 (tables)
@@ -301,7 +305,7 @@ async def main():
     for name, func in demos:
         try:
             await func()
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
             print(f"\n演示 '{name}' 出错: {e}")
 
     # 真实浏览器演示（需要网络）

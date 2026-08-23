@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
 from typing import Any
 
+from app.core.time import utc_now_naive
 from app.db.connection import get_db_pool
 from app.db.json import dumps_json
 from app.graph.state import RuntimeStatus
@@ -181,9 +181,8 @@ class RuntimePersistence:
             },
         )
 
-        now = datetime.utcnow()
-        async with pool.acquire() as conn:
-            async with conn.transaction():
+        now = utc_now_naive()
+        async with pool.acquire() as conn, conn.transaction():
                 await conn.execute(
                     """
                     INSERT INTO session_runtime_state (

@@ -9,12 +9,13 @@
  * - Smooth micro-interactions
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ResearchDashboard from './components/ResearchDashboard'
 import LLMConfigPanel from './components/LLMConfigPanel'
 import DocumentManager from './components/DocumentManager'
 import SkillManager from './components/SkillManager'
+import AuthGate from './components/AuthGate'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -235,6 +236,21 @@ function FeaturesSection() {
  * ============================================================ */
 function App() {
   const [view, setView] = useState<'home' | 'research' | 'settings' | 'documents' | 'skills'>('home')
+  const [auth, setAuth] = useState<{ initialized: boolean; authenticated: boolean } | null>(null)
+
+  const refreshAuth = useCallback(async () => {
+    const status = await fetch('/api/v1/auth/status', { credentials: 'include' }).then(response => response.json())
+    let authenticated = false
+    if (status.initialized) {
+      authenticated = await fetch('/api/v1/auth/me', { credentials: 'include' }).then(response => response.ok).catch(() => false)
+    }
+    setAuth({ initialized: status.initialized, authenticated })
+  }, [])
+
+  useEffect(() => { void refreshAuth() }, [refreshAuth])
+
+  if (!auth) return <main className="min-h-screen grid place-items-center text-sm text-xmgray-500">正在验证会话…</main>
+  if (!auth.authenticated) return <AuthGate state={auth} onAuthenticated={() => void refreshAuth()} />
 
   const handleExplore = useCallback(() => {
     setView('research')

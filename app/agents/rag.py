@@ -7,15 +7,14 @@ Implements vector search + BM25 + RRF fusion + BGE Reranker.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+
+from typing_extensions import Self
 
 from app.config import get_settings
 from app.db.connection import get_text_search_config
 from app.db.text_search import regconfig_sql_literal
-from app.graph.state import Citation, RAGResult, PlanStep
-
-if TYPE_CHECKING:
-    pass
+from app.graph.state import Citation, PlanStep, RAGResult
+from app.security.capabilities import CapabilityUnavailable, capability_registry
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +81,7 @@ class RAGAgent:
             self._db_pool = None
             logger.info("RAG Agent: database pool closed")
 
-    async def __aenter__(self) -> "RAGAgent":
+    async def __aenter__(self) -> Self:
         """Async context manager entry."""
         return self
 
@@ -95,15 +94,28 @@ class RAGAgent:
         plan_steps: list[PlanStep],
         user_query: str,
         group: str | None = None,
+        owner_id: str | None = None,
     ) -> list[RAGResult]:
         """
         Execute RAG retrieval for the given plan steps.
         """
+        if not owner_id:
+            logger.warning("RAG retrieval rejected because owner scope is missing")
+            return []
+
         logger.info(f"RAG Agent: processing {len(plan_steps)} steps")
 
-        pool = await self._get_db_pool()
-        embedder = await self._get_embedder()
-        reranker = await self._get_reranker()
+        try:
+            pool = await capability_registry.run("rag_database", self._get_db_pool)
+            embedder = await capability_registry.run("embedding", self._get_embedder)
+        except CapabilityUnavailable as exc:
+            logger.warning("RAG unavailable: %s", exc)
+            return []
+        reranker = None
+        try:
+            reranker = await capability_registry.run("reranker", self._get_reranker)
+        except CapabilityUnavailable as exc:
+            logger.warning("Reranker unavailable; using hybrid ranking: %s", exc)
 
         results: list[RAGResult] = []
 
@@ -128,31 +140,34 @@ class RAGAgent:
                             OR metadata->>'source_group' = $2::text
                             OR metadata->>'knowledge_group' = $2::text
                         )
+                        AND ($3::uuid IS NULL OR owner_id = $3::uuid)
                         ORDER BY embedding <=> $1::vector
                         LIMIT 30
-                    """, query_embedding, group)
+                    """, query_embedding, group, owner_id)
 
                     # BM25 search
                     bm25_rows = await conn.fetch(
-                        """
+                        f"""
                         SELECT id, content, metadata,
                                ts_rank(
-                                   to_tsvector({fts_config}, content),
-                                   plainto_tsquery({fts_config}, $1)
+                                   to_tsvector({fts_config_sql}, content),
+                                   plainto_tsquery({fts_config_sql}, $1)
                                ) AS bm25_score
                         FROM documents
-                        WHERE to_tsvector({fts_config}, content) @@ plainto_tsquery({fts_config}, $1)
+                        WHERE to_tsvector({fts_config_sql}, content) @@ plainto_tsquery({fts_config_sql}, $1)
                         AND (
                             $2::text IS NULL
                             OR metadata->>'group' = $2::text
                             OR metadata->>'source_group' = $2::text
                             OR metadata->>'knowledge_group' = $2::text
                         )
+                        AND ($3::uuid IS NULL OR owner_id = $3::uuid)
                         ORDER BY bm25_score DESC
                         LIMIT 30
-                        """.format(fts_config=fts_config_sql),
+                        """,
                         step.target_query,
                         group,
+                        owner_id,
                     )
 
                 # Build result lists
@@ -170,8 +185,8 @@ class RAGAgent:
                 rrf_scores: dict[str, float] = {}
 
                 for doc_id in all_ids:
-                    vr = vector_results.get(doc_id, {})
-                    br = bm25_results.get(doc_id, {})
+                    vector_results.get(doc_id, {})
+                    bm25_results.get(doc_id, {})
                     v_rank = list(vector_results.keys()).index(doc_id) + 1 if doc_id in vector_results else len(vector_results) + 1
                     b_rank = list(bm25_results.keys()).index(doc_id) + 1 if doc_id in bm25_results else len(bm25_results) + 1
 
@@ -193,11 +208,20 @@ class RAGAgent:
                     continue
 
                 # Rerank
-                reranked = await reranker.rerank(
-                    query=step.target_query,
-                    documents=rerank_docs,
-                    top_n=self.rag_cfg.rerank_top_n,
-                )
+                if reranker is not None:
+                    try:
+                        reranked = await capability_registry.run(
+                            "reranker",
+                        lambda query=step.target_query, documents=rerank_docs: reranker.rerank(
+                            query=query,
+                            documents=documents,
+                                top_n=self.rag_cfg.rerank_top_n,
+                            ),
+                        )
+                    except CapabilityUnavailable:
+                        reranked = [rrf_scores[doc_id] for doc_id in top_ids]
+                else:
+                    reranked = [rrf_scores[doc_id] for doc_id in top_ids]
 
                 # Build final results
                 for i, (rerank_score, doc_id) in enumerate(zip(reranked, top_ids)):
@@ -224,7 +248,7 @@ class RAGAgent:
                         citation=citation,
                     ))
 
-            except Exception as e:
+            except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
                 logger.error(f"RAG step error for '{step.target_query}': {e}")
                 continue
 
@@ -236,22 +260,24 @@ class RAGAgent:
         plan_steps: list[PlanStep],
         user_query: str,
         group: str | None = None,
+        owner_id: str | None = None,
     ) -> list[RAGResult]:
         """Synchronous wrapper."""
         try:
             import asyncio
-            return asyncio.run(self.execute_async(plan_steps, user_query, group=group))
+            return asyncio.run(self.execute_async(plan_steps, user_query, group=group, owner_id=owner_id))
         except RuntimeError:
             import nest_asyncio
             nest_asyncio.apply()
             import asyncio
-            return asyncio.run(self.execute_async(plan_steps, user_query, group=group))
+            return asyncio.run(self.execute_async(plan_steps, user_query, group=group, owner_id=owner_id))
 
     def execute_retrieval(
         self,
         query: str,
         context: str = "",
         group: str | None = None,
+        owner_id: str | None = None,
     ) -> list[RAGResult]:
         """
         Execute RAG retrieval for a single query (主题 3 工具接口).
@@ -260,13 +286,14 @@ class RAGAgent:
         """
         from app.graph.state import PlanStep
         step = PlanStep(target_query=query, node_type="rag")
-        return self.execute([step], context or query, group=group)
+        return self.execute([step], context or query, group=group, owner_id=owner_id)
 
     def execute_for_node(
         self,
         node_query: str,
         context: str = "",
         group: str | None = None,
+        owner_id: str | None = None,
     ) -> list[RAGResult]:
         """兼容接口：根据节点 query 执行检索。"""
-        return self.execute_retrieval(node_query, context, group=group)
+        return self.execute_retrieval(node_query, context, group=group, owner_id=owner_id)

@@ -3,20 +3,22 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, ClassVar
 
 from app.config import get_settings
+from app.core.time import utc_now_naive
 
 
 class HarnessSupervisor:
     """File-backed supervisor state for long-running research tasks."""
 
     STATE_VERSION = 2
-    ACTIVE_RUNTIME_STATUSES = {"running", "awaiting_approval", "retryable_failed"}
-    TERMINAL_RUNTIME_STATUSES = {"completed", "terminal_failed", "failed"}
+    ACTIVE_RUNTIME_STATUSES: ClassVar[set[str]] = {"running", "awaiting_approval", "retryable_failed"}
+    TERMINAL_RUNTIME_STATUSES: ClassVar[set[str]] = {"completed", "terminal_failed", "failed"}
 
     def __init__(self, state_root: str | None = None):
         settings = get_settings()
@@ -33,7 +35,7 @@ class HarnessSupervisor:
             self._save(self._default_state())
 
     def _now(self) -> str:
-        return datetime.utcnow().isoformat()
+        return utc_now_naive().isoformat()
 
     def _default_state(self) -> dict[str, Any]:
         return {
@@ -156,9 +158,9 @@ class HarnessSupervisor:
             raw_owner = owner_path.read_text(encoding="utf-8")
             owner = json.loads(raw_owner)
             created_at = datetime.fromisoformat(str(owner.get("created_at")))
-        except Exception:
-            created_at = datetime.utcnow() - timedelta(seconds=stale_seconds + 1)
-        if datetime.utcnow() - created_at < timedelta(seconds=stale_seconds):
+        except (json.JSONDecodeError, TypeError, ValueError):
+            created_at = utc_now_naive() - timedelta(seconds=stale_seconds + 1)
+        if utc_now_naive() - created_at < timedelta(seconds=stale_seconds):
             return
         try:
             if owner_path.exists():
@@ -199,9 +201,11 @@ class HarnessSupervisor:
     def clear_active_if_idle(self) -> None:
         with self._state_lock():
             data = self._load()
-            if not any(task.get("runtime_status") in self.ACTIVE_RUNTIME_STATUSES for task in data.get("tasks", [])):
-                if self.active_marker.exists():
-                    self.active_marker.unlink()
+            if (
+                not any(task.get("runtime_status") in self.ACTIVE_RUNTIME_STATUSES for task in data.get("tasks", []))
+                and self.active_marker.exists()
+            ):
+                self.active_marker.unlink()
 
     def is_lease_expired(self, task: dict[str, Any], *, now: datetime | None = None) -> bool:
         lease = task.get("lease") or {}
@@ -212,7 +216,7 @@ class HarnessSupervisor:
             expires_at = datetime.fromisoformat(str(raw_expires_at))
         except ValueError:
             return True
-        return (now or datetime.utcnow()) >= expires_at
+        return (now or utc_now_naive()) >= expires_at
 
     def renew_lease(self, session_id: str, *, worker_id: str = "worker-1", ttl_minutes: int = 10) -> dict[str, Any] | None:
         with self._state_lock():
@@ -234,7 +238,7 @@ class HarnessSupervisor:
     def _build_lease(self, *, worker_id: str, ttl_minutes: int = 10) -> dict[str, Any]:
         return {
             "claimed_by": worker_id,
-            "lease_expires_at": (datetime.utcnow() + timedelta(minutes=ttl_minutes)).isoformat(),
+            "lease_expires_at": (utc_now_naive() + timedelta(minutes=ttl_minutes)).isoformat(),
             "last_heartbeat_at": self._now(),
         }
 

@@ -8,18 +8,22 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import TYPE_CHECKING
 
 from app.config import get_settings
-from app.guardrails import build_guardrail_decision, build_prompt_profile_message
-from app.llm_client import collect_usage_metrics
 from app.graph.state import (
     ClaimConflict,
     Evidence,
     HallucinatedClaim,
     ReflectionResult,
 )
+from app.guardrails import build_guardrail_decision, build_prompt_profile_message
+from app.llm_client import (
+    call_chat_with_fallback,
+    collect_usage_metrics,
+    create_fallback_llm_client,
+)
+from app.security.prompt_security import untrusted_context
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -126,8 +130,6 @@ Be strict but fair. Flag real hallucinations but don't over-flag.
         logger.info(f"Reflection: validating analysis ({len(analysis)} chars, {len(evidence_list)} evidence items)")
         decision = build_guardrail_decision(user_query)
         system_prompt = f"{build_prompt_profile_message(decision, user_query)}\n\n{self.SYSTEM_PROMPT}"
-        if skill_prompt:
-            system_prompt = f"{system_prompt}\n\n## Active Skill Context\n{skill_prompt.strip()}"
         if reflection_hints:
             system_prompt = (
                 f"{system_prompt}\n\n## Reflection Skill Instructions\n"
@@ -143,28 +145,34 @@ Be strict but fair. Flag real hallucinations but don't over-flag.
                 "content": f"""Research Question: {user_query}
 
 Analysis to Validate:
-{analysis}
+{untrusted_context('analyst_output', analysis)}
+
+{untrusted_context('skill_content', skill_prompt or '') if skill_prompt else ''}
 
 Evidence Sources:
-{formatted_evidence}
+{untrusted_context('external_evidence', formatted_evidence)}
 
 Perform a rigorous quality check and return the structured JSON output."""
             },
         ]
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
+            response, response_model, fallback_used = call_chat_with_fallback(
+                self.client,
+                self.model,
+                create_fallback_llm_client(),
                 messages=messages,
                 temperature=0.1,  # Low temp for consistency
                 max_tokens=2048,
                 response_format={"type": "json_object"},
             )
+            if fallback_used:
+                self.model = response_model
 
             content = response.choices[0].message.content
             self.last_usage = collect_usage_metrics(
                 response=response,
-                model=self.model,
+                model=response_model,
                 messages=messages,
                 completion_text=content,
             )
@@ -183,7 +191,7 @@ Perform a rigorous quality check and return the structured JSON output."""
                         reason=h.get("reason", ""),
                         suggested_fix=h.get("suggested_action") or h.get("suggested_fix", ""),
                     ))
-                except Exception:
+                except (OSError, RuntimeError, TypeError, ValueError, KeyError, AttributeError):
                     continue
 
             # Parse conflicts
@@ -195,7 +203,7 @@ Perform a rigorous quality check and return the structured JSON output."""
                         claim_b=c.get("claim_b", ""),
                         conflict_description=c.get("conflict_description", ""),
                     ))
-                except Exception:
+                except (OSError, RuntimeError, TypeError, ValueError, KeyError, AttributeError):
                     continue
 
             result = ReflectionResult(
@@ -217,7 +225,7 @@ Perform a rigorous quality check and return the structured JSON output."""
             )
             return result
 
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.error(f"Reflection error: {e}")
             self.last_usage = None
             return self._default_result()

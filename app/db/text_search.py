@@ -7,6 +7,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import asyncpg
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_FALLBACK_CONFIGS = ("simple", "english")
@@ -41,7 +43,7 @@ async def resolve_text_search_config(
                 "SELECT EXISTS (SELECT 1 FROM pg_ts_config WHERE cfgname = $1::text)",
                 candidate,
             )
-        except Exception as exc:
+        except (OSError, RuntimeError, asyncpg.PostgresError) as exc:
             active_logger.debug(
                 "Text search config candidate '%s' could not be resolved: %s",
                 candidate,

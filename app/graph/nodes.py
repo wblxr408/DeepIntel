@@ -6,27 +6,27 @@ This file provides imports for backward compatibility.
 """
 
 from app.graph.compiler import (
-    planner_node,
+    analyst_node,
+    browser_node,
     dag_executor_node,
     dag_results_aggregator,
-    search_node,
-    browser_node,
+    planner_node,
     rag_node,
-    analyst_node,
     reflection_node,
     replan_node,
     report_node,
+    search_node,
 )
 
 __all__ = [
-    "planner_node",
+    "analyst_node",
+    "browser_node",
     "dag_executor_node",
     "dag_results_aggregator",
-    "search_node",
-    "browser_node",
+    "planner_node",
     "rag_node",
-    "analyst_node",
     "reflection_node",
     "replan_node",
     "report_node",
+    "search_node",
 ]

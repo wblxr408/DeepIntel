@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
 from enum import Enum
 from typing import Any
 from uuid import uuid4
 
+from app.core.time import utc_now_naive
 from app.observability.sse_manager import get_sse_manager
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,7 @@ class AgentTracer:
         self._emit(EventType.THOUGHT, {
             "agent": self.agent,
             "content": content,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_naive().isoformat(),
         })
 
     def tool_call(self, tool_name: str, args: dict[str, Any]) -> str:

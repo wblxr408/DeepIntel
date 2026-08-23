@@ -2,10 +2,13 @@
 Tests for the research graph workflow.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
+
 import pytest
-from app.graph.state import ResearchState, create_initial_state, StepStatus, PlanStep
+
+from app.core.time import utc_now_naive
 from app.graph.compiler import compile_research_graph, should_revise
+from app.graph.state import PlanStep, StepStatus, create_initial_state
 
 
 class TestResearchState:
@@ -103,7 +106,13 @@ class TestGraphCompilation:
         from unittest.mock import patch
 
         from app.graph.compiler import search_node
-        from app.graph.state import AgentType, DAGDefinition, PlanNode, SearchResult, serialize_dag
+        from app.graph.state import (
+            AgentType,
+            DAGDefinition,
+            PlanNode,
+            SearchResult,
+            serialize_dag,
+        )
 
         node = PlanNode(node_type="search", query="test query")
         state = create_initial_state("test query", "session-1")
@@ -130,7 +139,11 @@ class TestGraphCompilation:
         from unittest.mock import patch
 
         from app.graph.compiler import search_node
-        from app.graph.state import DAGDefinition, PlanNode, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            serialize_dag,
+        )
 
         node = PlanNode(node_type="search", query="test query")
         state = create_initial_state("test query", "session-1")
@@ -149,7 +162,11 @@ class TestGraphCompilation:
         from unittest.mock import patch
 
         from app.graph.compiler import search_node
-        from app.graph.state import DAGDefinition, PlanNode, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            serialize_dag,
+        )
 
         node = PlanNode(node_type="search", query="test query")
         state = create_initial_state("test query", "session-1")
@@ -167,7 +184,12 @@ class TestGraphCompilation:
         from unittest.mock import patch
 
         from app.graph.compiler import browser_node
-        from app.graph.state import BrowserResult, DAGDefinition, PlanNode, serialize_dag
+        from app.graph.state import (
+            BrowserResult,
+            DAGDefinition,
+            PlanNode,
+            serialize_dag,
+        )
 
         node = PlanNode(node_type="browser", query="https://example.com")
         state = create_initial_state("test query", "session-1")
@@ -193,7 +215,13 @@ class TestGraphCompilation:
 
     def test_dag_aggregator_keeps_failed_node_failed(self):
         from app.graph.compiler import dag_results_aggregator
-        from app.graph.state import DAGDefinition, PlanNode, RuntimeStatus, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            RuntimeStatus,
+            deserialize_dag,
+            serialize_dag,
+        )
 
         node = PlanNode(node_id="s1", node_type="search", query="test query")
         state = create_initial_state("test query", "session-1")
@@ -223,7 +251,12 @@ class TestGraphCompilation:
 
     def test_dag_executor_requeues_retryable_failed_node_under_limit(self):
         from app.graph.compiler import dag_executor_node
-        from app.graph.state import DAGDefinition, PlanNode, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            deserialize_dag,
+            serialize_dag,
+        )
 
         node = PlanNode(node_id="s1", node_type="search", query="retry query")
         node.status = StepStatus.FAILED
@@ -258,7 +291,7 @@ class TestGraphCompilation:
                 "last_error_category": "timeout",
                 "retry_count": 1,
                 "repeat_blocked": False,
-                "next_retry_at": (datetime.utcnow() + timedelta(seconds=30)).isoformat(),
+                "next_retry_at": (utc_now_naive() + timedelta(seconds=30)).isoformat(),
                 "backoff_seconds": 30,
             }],
             "max_retries_per_tool": 2,
@@ -272,7 +305,11 @@ class TestGraphCompilation:
 
     def test_dag_executor_does_not_retry_terminal_or_exhausted_node(self):
         from app.graph.compiler import dag_executor_node
-        from app.graph.state import DAGDefinition, PlanNode, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            serialize_dag,
+        )
 
         node = PlanNode(node_id="s1", node_type="search", query="bad query")
         node.status = StepStatus.FAILED
@@ -346,7 +383,7 @@ class TestGraphCompilation:
                 "last_error_category": "timeout",
                 "retry_count": 1,
                 "repeat_blocked": False,
-                "next_retry_at": (datetime.utcnow() + timedelta(seconds=30)).isoformat(),
+                "next_retry_at": (utc_now_naive() + timedelta(seconds=30)).isoformat(),
                 "backoff_seconds": 30,
             }],
             "max_retries_per_tool": 2,
@@ -369,7 +406,12 @@ class TestGraphCompilation:
         from unittest.mock import patch
 
         from app.graph.compiler import replan_node
-        from app.graph.state import DAGDefinition, PlanNode, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            deserialize_dag,
+            serialize_dag,
+        )
 
         old_node = PlanNode(node_id="s1", node_type="search", query="old query")
         new_node = PlanNode(node_id="s2", node_type="rag", query="new query")
@@ -432,7 +474,11 @@ class TestGraphCompilation:
 
     def test_execute_tool_batch_includes_dag_payload(self):
         from app.graph.compiler import execute_tool_batch
-        from app.graph.state import DAGDefinition, PlanNode, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            serialize_dag,
+        )
 
         node = PlanNode(node_type="search", query="test query")
         state = create_initial_state("test query", "session-1")
@@ -500,7 +546,11 @@ class TestGraphCompilation:
         from unittest.mock import patch
 
         from app.graph.compiler import planner_node
-        from app.graph.state import DAGDefinition, PlanNode, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            deserialize_dag,
+        )
 
         search_node_only = PlanNode(node_id="s1", node_type="search", query="test query")
         dag = DAGDefinition(dag_name="test", nodes=[search_node_only], edges=[])
@@ -518,7 +568,12 @@ class TestGraphCompilation:
 
     def test_dag_aggregator_skips_web_after_rag_hit_by_default(self):
         from app.graph.compiler import dag_results_aggregator
-        from app.graph.state import DAGDefinition, PlanNode, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            deserialize_dag,
+            serialize_dag,
+        )
 
         rag = PlanNode(node_id="r1", node_type="rag", query="internal")
         search = PlanNode(node_id="s1", node_type="search", query="web", depends_on=["r1"])
@@ -538,7 +593,12 @@ class TestGraphCompilation:
 
     def test_dag_aggregator_allows_web_when_rag_empty(self):
         from app.graph.compiler import dag_results_aggregator
-        from app.graph.state import DAGDefinition, PlanNode, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            deserialize_dag,
+            serialize_dag,
+        )
 
         rag = PlanNode(node_id="r1", node_type="rag", query="internal")
         search = PlanNode(node_id="s1", node_type="search", query="web", depends_on=["r1"])
@@ -557,7 +617,13 @@ class TestGraphCompilation:
 
     def test_dag_aggregator_triggers_budget_breaker_on_tool_call_limit(self):
         from app.graph.compiler import dag_results_aggregator
-        from app.graph.state import DAGDefinition, PlanNode, RuntimeStatus, serialize_dag, deserialize_dag
+        from app.graph.state import (
+            DAGDefinition,
+            PlanNode,
+            RuntimeStatus,
+            deserialize_dag,
+            serialize_dag,
+        )
 
         current = PlanNode(node_id="r1", node_type="rag", query="internal")
         current.result = {"results": [{"content": "hit"}]}

@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
 
+from app.core.time import utc_now_naive
 from app.db.connection import get_db_pool
 from app.db.json import dumps_json
-from app.skills.models import SkillContentRecord, SkillMetaRecord, SkillMetadata, SkillRecord
-from app.skills.parser import build_skill_markdown, derive_coarse_terms, parse_skill_markdown
+from app.skills.models import (
+    SkillContentRecord,
+    SkillMetadata,
+    SkillMetaRecord,
+    SkillRecord,
+)
+from app.skills.parser import (
+    build_skill_markdown,
+    derive_coarse_terms,
+    parse_skill_markdown,
+)
 
 
 async def ensure_skill_storage_bootstrapped() -> None:
@@ -135,7 +144,7 @@ def _row_to_content(row: Any) -> SkillContentRecord:
     )
 
 
-async def list_skill_meta(include_deleted: bool = False) -> list[SkillMetaRecord]:
+async def list_skill_meta(owner_id: str, include_deleted: bool = False) -> list[SkillMetaRecord]:
     await ensure_skill_storage_bootstrapped()
     pool = await get_db_pool()
     async with pool.acquire() as conn:
@@ -147,8 +156,9 @@ async def list_skill_meta(include_deleted: bool = False) -> list[SkillMetaRecord
                        agent_hints_json, domain, tenant_id, project_id, scope,
                        coarse_terms_json, metadata_json, is_deleted, created_at, updated_at
                 FROM skill_meta
+                WHERE owner_id = $1::uuid
                 ORDER BY updated_at DESC, created_at DESC
-                """
+                """, owner_id
             )
         else:
             rows = await conn.fetch(
@@ -158,14 +168,14 @@ async def list_skill_meta(include_deleted: bool = False) -> list[SkillMetaRecord
                        agent_hints_json, domain, tenant_id, project_id, scope,
                        coarse_terms_json, metadata_json, is_deleted, created_at, updated_at
                 FROM skill_meta
-                WHERE is_deleted = FALSE
+                WHERE is_deleted = FALSE AND owner_id = $1::uuid
                 ORDER BY updated_at DESC, created_at DESC
-                """
+                """, owner_id
             )
     return [_row_to_meta(row) for row in rows]
 
 
-async def get_skill_meta_by_id(skill_id: str) -> SkillMetaRecord:
+async def get_skill_meta_by_id(skill_id: str, owner_id: str) -> SkillMetaRecord:
     await ensure_skill_storage_bootstrapped()
     pool = await get_db_pool()
     async with pool.acquire() as conn:
@@ -176,16 +186,17 @@ async def get_skill_meta_by_id(skill_id: str) -> SkillMetaRecord:
                    agent_hints_json, domain, tenant_id, project_id, scope,
                    coarse_terms_json, metadata_json, is_deleted, created_at, updated_at
             FROM skill_meta
-            WHERE id = $1::uuid
+            WHERE id = $1::uuid AND owner_id = $2::uuid
             """,
             skill_id,
+            owner_id,
         )
     if not row:
         raise HTTPException(status_code=404, detail="Skill not found")
     return _row_to_meta(row)
 
 
-async def get_skill_meta_by_slug(slug: str) -> SkillMetaRecord | None:
+async def get_skill_meta_by_slug(slug: str, owner_id: str) -> SkillMetaRecord | None:
     await ensure_skill_storage_bootstrapped()
     pool = await get_db_pool()
     async with pool.acquire() as conn:
@@ -196,32 +207,35 @@ async def get_skill_meta_by_slug(slug: str) -> SkillMetaRecord | None:
                    agent_hints_json, domain, tenant_id, project_id, scope,
                    coarse_terms_json, metadata_json, is_deleted, created_at, updated_at
             FROM skill_meta
-            WHERE slug = $1
+            WHERE slug = $1 AND owner_id = $2::uuid
             """,
             slug,
+            owner_id,
         )
     return _row_to_meta(row) if row else None
 
 
-async def get_skill_content(skill_id: str, version: int) -> SkillContentRecord:
+async def get_skill_content(skill_id: str, version: int, owner_id: str) -> SkillContentRecord:
     await ensure_skill_storage_bootstrapped()
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT skill_id, version, markdown_content, body, overview, prompt, constraints, content_hash, created_at
-            FROM skill_content
-            WHERE skill_id = $1::uuid AND version = $2
+            FROM skill_content content
+            JOIN skill_meta meta ON meta.id = content.skill_id
+            WHERE content.skill_id = $1::uuid AND content.version = $2 AND meta.owner_id = $3::uuid
             """,
             skill_id,
             version,
+            owner_id,
         )
     if not row:
         raise HTTPException(status_code=404, detail="Skill content not found")
     return _row_to_content(row)
 
 
-async def get_skill_content_batch(skill_refs: list[tuple[str, int]]) -> dict[tuple[str, int], SkillContentRecord]:
+async def get_skill_content_batch(skill_refs: list[tuple[str, int]], owner_id: str) -> dict[tuple[str, int], SkillContentRecord]:
     await ensure_skill_storage_bootstrapped()
     if not skill_refs:
         return {}
@@ -232,11 +246,13 @@ async def get_skill_content_batch(skill_refs: list[tuple[str, int]]) -> dict[tup
             row = await conn.fetchrow(
                 """
                 SELECT skill_id, version, markdown_content, body, overview, prompt, constraints, content_hash, created_at
-                FROM skill_content
-                WHERE skill_id = $1::uuid AND version = $2
+                FROM skill_content content
+                JOIN skill_meta meta ON meta.id = content.skill_id
+                WHERE content.skill_id = $1::uuid AND content.version = $2 AND meta.owner_id = $3::uuid
                 """,
                 skill_id,
                 version,
+                owner_id,
             )
             if row:
                 content = _row_to_content(row)
@@ -244,36 +260,35 @@ async def get_skill_content_batch(skill_refs: list[tuple[str, int]]) -> dict[tup
     return mapping
 
 
-async def get_skill_by_id(skill_id: str) -> SkillRecord:
-    meta = await get_skill_meta_by_id(skill_id)
-    content = await get_skill_content(skill_id, meta.version)
+async def get_skill_by_id(skill_id: str, owner_id: str) -> SkillRecord:
+    meta = await get_skill_meta_by_id(skill_id, owner_id)
+    content = await get_skill_content(skill_id, meta.version, owner_id)
     return SkillRecord(meta=meta, content=content)
 
 
-async def create_skill(markdown_content: str) -> SkillRecord:
+async def create_skill(markdown_content: str, owner_id: str) -> SkillRecord:
     metadata, body, sections = parse_skill_markdown(markdown_content)
-    existing = await get_skill_meta_by_slug(metadata.slug)
+    existing = await get_skill_meta_by_slug(metadata.slug, owner_id)
     if existing is not None:
         raise HTTPException(status_code=409, detail=f"Skill slug '{metadata.slug}' already exists")
 
     coarse_terms = derive_coarse_terms(metadata)
-    now = datetime.utcnow()
+    now = utc_now_naive()
     pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        async with conn.transaction():
+    async with pool.acquire() as conn, conn.transaction():
             row = await conn.fetchrow(
                 """
                 INSERT INTO skill_meta (
                     slug, name, description, current_version, enabled, priority,
                     tags_json, keywords_json, trigger_patterns_json, allowed_tools_json,
                     agent_hints_json, domain, tenant_id, project_id, scope,
-                    coarse_terms_json, metadata_json, is_deleted, created_at, updated_at
+                    coarse_terms_json, metadata_json, owner_id, is_deleted, created_at, updated_at
                 )
                 VALUES (
                     $1, $2, $3, $4, $5, $6,
                     $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb,
                     $11::jsonb, $12, $13, $14, $15,
-                    $16::jsonb, $17::jsonb, FALSE, $18, $18
+                    $16::jsonb, $17::jsonb, $18::uuid, FALSE, $19, $19
                 )
                 RETURNING id, slug, name, description, current_version, enabled, priority,
                           tags_json, keywords_json, trigger_patterns_json, allowed_tools_json,
@@ -297,6 +312,7 @@ async def create_skill(markdown_content: str) -> SkillRecord:
                 metadata.scope,
                 dumps_json(coarse_terms),
                 dumps_json(metadata.model_dump()),
+                owner_id,
                 now,
             )
             await conn.execute(
@@ -316,13 +332,13 @@ async def create_skill(markdown_content: str) -> SkillRecord:
                 _content_hash(markdown_content),
                 now,
             )
-    return SkillRecord(meta=_row_to_meta(row), content=await get_skill_content(str(row["id"]), metadata.version))
+    return SkillRecord(meta=_row_to_meta(row), content=await get_skill_content(str(row["id"]), metadata.version, owner_id))
 
 
-async def update_skill(skill_id: str, markdown_content: str) -> SkillRecord:
-    existing = await get_skill_meta_by_id(skill_id)
+async def update_skill(skill_id: str, markdown_content: str, owner_id: str) -> SkillRecord:
+    existing = await get_skill_meta_by_id(skill_id, owner_id)
     metadata, body, sections = parse_skill_markdown(markdown_content)
-    slug_conflict = await get_skill_meta_by_slug(metadata.slug)
+    slug_conflict = await get_skill_meta_by_slug(metadata.slug, owner_id)
     if slug_conflict is not None and slug_conflict.id != skill_id:
         raise HTTPException(status_code=409, detail=f"Skill slug '{metadata.slug}' already exists")
 
@@ -335,10 +351,9 @@ async def update_skill(skill_id: str, markdown_content: str) -> SkillRecord:
         )
 
     coarse_terms = derive_coarse_terms(metadata)
-    now = datetime.utcnow()
+    now = utc_now_naive()
     pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        async with conn.transaction():
+    async with pool.acquire() as conn, conn.transaction():
             row = await conn.fetchrow(
                 """
                 UPDATE skill_meta
@@ -361,7 +376,7 @@ async def update_skill(skill_id: str, markdown_content: str) -> SkillRecord:
                     metadata_json = $18::jsonb,
                     is_deleted = FALSE,
                     updated_at = $19
-                WHERE id = $1::uuid
+                WHERE id = $1::uuid AND owner_id = $20::uuid
                 RETURNING id, slug, name, description, current_version, enabled, priority,
                           tags_json, keywords_json, trigger_patterns_json, allowed_tools_json,
                           agent_hints_json, domain, tenant_id, project_id, scope,
@@ -386,6 +401,7 @@ async def update_skill(skill_id: str, markdown_content: str) -> SkillRecord:
                 dumps_json(coarse_terms),
                 dumps_json(metadata.model_dump()),
                 now,
+                owner_id,
             )
             if not row:
                 raise HTTPException(status_code=404, detail="Skill not found")
@@ -413,10 +429,10 @@ async def update_skill(skill_id: str, markdown_content: str) -> SkillRecord:
                 _content_hash(markdown_content),
                 now,
             )
-    return SkillRecord(meta=_row_to_meta(row), content=await get_skill_content(skill_id, next_version))
+    return SkillRecord(meta=_row_to_meta(row), content=await get_skill_content(skill_id, next_version, owner_id))
 
 
-async def delete_skill(skill_id: str) -> None:
+async def delete_skill(skill_id: str, owner_id: str) -> None:
     await ensure_skill_storage_bootstrapped()
     pool = await get_db_pool()
     async with pool.acquire() as conn:
@@ -426,10 +442,11 @@ async def delete_skill(skill_id: str) -> None:
             SET is_deleted = TRUE,
                 enabled = FALSE,
                 updated_at = $2
-            WHERE id = $1::uuid
+            WHERE id = $1::uuid AND owner_id = $3::uuid
             """,
             skill_id,
-            datetime.utcnow(),
+            utc_now_naive(),
+            owner_id,
         )
     if result.endswith("0"):
         raise HTTPException(status_code=404, detail="Skill not found")

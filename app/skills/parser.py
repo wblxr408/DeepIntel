@@ -7,7 +7,6 @@ import yaml
 
 from app.skills.models import SkillMetadata
 
-
 FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
 SECTION_PATTERN = re.compile(r"^#\s+(?P<title>.+?)\s*$", re.MULTILINE)
 TOKEN_PATTERN = re.compile(r"[a-z0-9_\-\u4e00-\u9fff]{2,}", re.IGNORECASE)

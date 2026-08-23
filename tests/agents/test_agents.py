@@ -3,9 +3,11 @@ Tests for individual agent implementations.
 """
 
 import asyncio
-import pytest
 from unittest.mock import MagicMock, patch
-from app.graph.state import PlanStep, StepStatus, Evidence, AgentType
+
+import pytest
+
+from app.graph.state import AgentType, Evidence, StepStatus
 
 
 class TestPlannerAgent:
@@ -20,9 +22,10 @@ class TestPlannerAgent:
         agent = PlannerAgent()
         # Mock the client to fail
         agent._client = MagicMock()
-        agent._client.chat.completions.create.side_effect = Exception("API Error")
+        agent._client.chat.completions.create.side_effect = RuntimeError("API Error")
 
-        steps = agent.create_plan("中国新能源车市场分析")
+        with patch("app.agents.planner.create_fallback_llm_client", return_value=None):
+            steps = agent.create_plan("中国新能源车市场分析")
         assert len(steps) == 4
         assert all(s["status"] == StepStatus.PENDING for s in steps)
         # Should have one of each agent type
@@ -112,8 +115,9 @@ class TestBrowserAgent:
         assert agent is not None
 
     def test_page_classification(self):
-        from app.agents.browser import BrowserAgent, PageType
         from unittest.mock import MagicMock
+
+        from app.agents.browser import BrowserAgent, PageType
 
         agent = BrowserAgent()
 

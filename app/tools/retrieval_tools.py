@@ -8,18 +8,20 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from contextvars import ContextVar
 
 from langchain_core.tools import tool
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
+_retrieval_owner_id: ContextVar[str | None] = ContextVar("retrieval_owner_id", default=None)
 
 
 @tool
-def knowledge_base_search(query: str, top_k: int = 5, group: str | None = None) -> str:
+def knowledge_base_search(
+    query: str,
+    top_k: int = 5,
+    group: str | None = None,
+) -> str:
     """
     Search the internal knowledge base for relevant documents and context.
 
@@ -38,6 +40,10 @@ def knowledge_base_search(query: str, top_k: int = 5, group: str | None = None) 
     Returns:
         JSON string of retrieved document chunks with metadata
     """
+    owner_id = _retrieval_owner_id.get()
+    if not owner_id:
+        return json.dumps({"error": "owner_scope_required"})
+
     try:
         from app.agents.rag import RAGAgent
         from app.graph.state import PlanStep
@@ -49,7 +55,7 @@ def knowledge_base_search(query: str, top_k: int = 5, group: str | None = None) 
             target_query=query,
         )
         agent = RAGAgent()
-        results = agent.execute([step], query, group=group)
+        results = agent.execute([step], query, group=group, owner_id=owner_id)
 
         output = []
         for r in results[:top_k]:
@@ -63,11 +69,19 @@ def knowledge_base_search(query: str, top_k: int = 5, group: str | None = None) 
 
         return json.dumps(output, ensure_ascii=False, indent=2)
 
-    except Exception as e:
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
         logger.error(f"Knowledge base search error: {e}")
         return json.dumps({"error": str(e)})
 
 
-def get_retrieval_tools():
-    """Return all retrieval tools for LangGraph."""
-    return [knowledge_base_search]
+def get_retrieval_tools(owner_id: str):
+    """Return tools bound to a server-derived owner, never an LLM argument."""
+    @tool
+    def scoped_knowledge_base_search(query: str, top_k: int = 5, group: str | None = None) -> str:
+        token = _retrieval_owner_id.set(owner_id)
+        try:
+            return knowledge_base_search.invoke({"query": query, "top_k": top_k, "group": group})
+        finally:
+            _retrieval_owner_id.reset(token)
+
+    return [scoped_knowledge_base_search]

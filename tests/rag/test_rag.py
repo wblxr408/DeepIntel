@@ -2,8 +2,10 @@
 Tests for the RAG module (embedding, retrieval, reranking).
 """
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+
 from app.rag.retriever import HybridRetriever
 
 
@@ -94,6 +96,85 @@ class TestReranker:
             reranker._model = None
             reranker._tokenizer = None
             assert reranker.model_name == "test-reranker"
+
+
+@pytest.mark.asyncio
+async def test_rag_agent_scopes_vector_and_bm25_queries_to_owner(monkeypatch):
+    from app.agents.rag import RAGAgent
+    from app.graph.state import PlanStep
+
+    owner_id = "00000000-0000-0000-0000-000000000001"
+    calls: list[tuple[str, tuple[object, ...]]] = []
+
+    class Conn:
+        async def fetch(self, query, *args):
+            calls.append((query, args))
+            return []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+    class Pool:
+        def acquire(self):
+            return Conn()
+
+    class Embedder:
+        async def embed(self, query):
+            return [0.1, 0.2]
+
+    agent = RAGAgent()
+    agent._db_pool = Pool()
+    agent._embedder = Embedder()
+
+    async def capability_run(name, initializer):
+        if name == "reranker":
+            from app.security.capabilities import (
+                CapabilityHealth,
+                CapabilityStatus,
+                CapabilityUnavailable,
+            )
+            raise CapabilityUnavailable(CapabilityStatus(name, CapabilityHealth.DEGRADED, "offline"))
+        return await initializer()
+
+    monkeypatch.setattr("app.agents.rag.capability_registry.run", capability_run)
+    monkeypatch.setattr("app.agents.rag.get_text_search_config", _fts_config)
+
+    result = await agent.execute_async([PlanStep(node_type="rag", query="private data")], "private data", owner_id=owner_id)
+
+    assert result == []
+    assert len(calls) == 2
+    assert all(args[-1] == owner_id for _, args in calls)
+    assert all("owner_id = $3::uuid" in query for query, _ in calls)
+
+
+async def _fts_config():
+    return "simple"
+
+
+def test_knowledge_base_tool_refuses_unscoped_retrieval():
+    from app.tools.retrieval_tools import knowledge_base_search
+
+    response = knowledge_base_search.invoke({"query": "private data"})
+
+    assert '"owner_scope_required"' in response
+
+
+@pytest.mark.asyncio
+async def test_rag_agent_refuses_unscoped_retrieval_without_initializing_dependencies(monkeypatch):
+    from app.agents.rag import RAGAgent
+    from app.graph.state import PlanStep
+
+    agent = RAGAgent()
+
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("unscoped retrieval must not initialize capabilities")
+
+    monkeypatch.setattr("app.agents.rag.capability_registry.run", fail_if_called)
+
+    assert await agent.execute_async([PlanStep(node_type="rag", query="private data")], "private data") == []
 
 
 if __name__ == "__main__":

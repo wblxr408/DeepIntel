@@ -29,15 +29,15 @@
 \contentsline {subsection}{\numberline {4.10}系统会不会从历史失败里吸取教训}{20}{subsection.4.10}%
 \contentsline {subsection}{\numberline {4.11}Search / Browser / RAG 三类节点如何分工}{21}{subsection.4.11}%
 \contentsline {section}{\numberline {5}第四轮拷打：关键机制是不是你真的做过}{21}{section.5}%
-\contentsline {subsection}{\numberline {5.1}Analyst 为什么单独存在}{22}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.1}Analyst 为什么单独存在}{21}{subsection.5.1}%
 \contentsline {subsection}{\numberline {5.2}Reflection 为什么不能省掉}{22}{subsection.5.2}%
 \contentsline {subsection}{\numberline {5.3}Reflection 和传统 reviewer 的区别}{23}{subsection.5.3}%
 \contentsline {subsection}{\numberline {5.4}RRF 融合检索为什么合理}{23}{subsection.5.4}%
-\contentsline {subsection}{\numberline {5.5}Checkpointer 的真实价值是什么}{24}{subsection.5.5}%
+\contentsline {subsection}{\numberline {5.5}Checkpointer 的真实价值是什么}{23}{subsection.5.5}%
 \contentsline {subsection}{\numberline {5.6}为什么 SSE 对这个系统重要}{24}{subsection.5.6}%
-\contentsline {section}{\numberline {6}第五轮拷打：性能、成本和资源怎么扛}{25}{section.6}%
+\contentsline {section}{\numberline {6}第五轮拷打：性能、成本和资源怎么扛}{24}{section.6}%
 \contentsline {subsection}{\numberline {6.1}为什么并行执行能显著降低时延}{25}{subsection.6.1}%
-\contentsline {subsection}{\numberline {6.2}Token 优化策略}{26}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.2}Token 优化策略}{25}{subsection.6.2}%
 \contentsline {subsection}{\numberline {6.3}数据库优化怎么看}{26}{subsection.6.3}%
 \contentsline {section}{\numberline {7}第六轮拷打：你怎么证明它没胡来}{27}{section.7}%
 \contentsline {subsection}{\numberline {7.1}我会看哪些指标}{27}{subsection.7.1}%
@@ -75,167 +75,192 @@
 \contentsline {subsection}{\numberline {11.1}底层题：不用框架写 multi-head attention，如何证明 shape 和 mask 没错}{60}{subsection.11.1}%
 \contentsline {section}{\numberline {12}第十轮拷打：优化记录总表与实施证据}{62}{section.12}%
 \contentsline {section}{\numberline {13}第十一轮拷打：Harness 每一处细节怎么拆}{64}{section.13}%
-\contentsline {subsection}{\numberline {13.1}为什么 Harness 不是“再加一个日志文件”}{65}{subsection.13.1}%
+\contentsline {subsection}{\numberline {13.1}为什么 Harness 不是“再加一个日志文件”}{64}{subsection.13.1}%
 \contentsline {subsection}{\numberline {13.2}Progress file 为什么是 append-only}{65}{subsection.13.2}%
-\contentsline {subsection}{\numberline {13.3}Tasks JSON 为什么是 structured state}{66}{subsection.13.3}%
+\contentsline {subsection}{\numberline {13.3}Tasks JSON 为什么是 structured state}{65}{subsection.13.3}%
 \contentsline {subsection}{\numberline {13.4}Active marker 的意义}{66}{subsection.13.4}%
-\contentsline {subsection}{\numberline {13.5}Lease 为什么是长任务 Agent 的核心字段}{67}{subsection.13.5}%
+\contentsline {subsection}{\numberline {13.5}Lease 为什么是长任务 Agent 的核心字段}{66}{subsection.13.5}%
 \contentsline {subsection}{\numberline {13.6}为什么恢复边界不能只靠 LangGraph checkpointer}{67}{subsection.13.6}%
-\contentsline {subsection}{\numberline {13.7}Rollback 为什么不能随便做}{68}{subsection.13.7}%
+\contentsline {subsection}{\numberline {13.7}Rollback 为什么不能随便做}{67}{subsection.13.7}%
 \contentsline {subsection}{\numberline {13.8}Dependency 与 blocked propagation}{68}{subsection.13.8}%
 \contentsline {subsection}{\numberline {13.9}Stats 为什么是恢复协议的一部分}{68}{subsection.13.9}%
-\contentsline {subsection}{\numberline {13.10}Harness 面试追问清单}{69}{subsection.13.10}%
-\contentsline {section}{\numberline {14}第十二轮拷打：MCP 协议与治理怎么讲深}{70}{section.14}%
-\contentsline {subsection}{\numberline {14.1}MCP 的三层结构}{70}{subsection.14.1}%
+\contentsline {subsection}{\numberline {13.10}Harness 面试追问清单}{68}{subsection.13.10}%
+\contentsline {section}{\numberline {14}第十二轮拷打：MCP 协议与治理怎么讲深}{69}{section.14}%
+\contentsline {subsection}{\numberline {14.1}MCP 的三层结构}{69}{subsection.14.1}%
 \contentsline {subsection}{\numberline {14.2}为什么 JSON-RPC 适合 MCP}{70}{subsection.14.2}%
 \contentsline {subsection}{\numberline {14.3}stdio 与 Streamable HTTP 怎么比较}{70}{subsection.14.3}%
-\contentsline {subsection}{\numberline {14.4}Tool inputSchema 为什么必须落到执行前}{71}{subsection.14.4}%
+\contentsline {subsection}{\numberline {14.4}Tool inputSchema 为什么必须落到执行前}{70}{subsection.14.4}%
 \contentsline {subsection}{\numberline {14.5}为什么 tool annotations 不能当安全依据}{71}{subsection.14.5}%
-\contentsline {subsection}{\numberline {14.6}MCP authorization 怎么回答}{72}{subsection.14.6}%
-\contentsline {subsection}{\numberline {14.7}MCP 面试追问清单}{72}{subsection.14.7}%
-\contentsline {section}{\numberline {15}第十三轮拷打：Agent 开发岗位底层能力}{73}{section.15}%
-\contentsline {subsection}{\numberline {15.1}平台基础设施线}{73}{subsection.15.1}%
-\contentsline {subsection}{\numberline {15.2}应用/RAG 研究线}{74}{subsection.15.2}%
+\contentsline {subsection}{\numberline {14.6}MCP authorization 怎么回答}{71}{subsection.14.6}%
+\contentsline {subsection}{\numberline {14.7}MCP 面试追问清单}{71}{subsection.14.7}%
+\contentsline {section}{\numberline {15}第十三轮拷打：Agent 开发岗位底层能力}{72}{section.15}%
+\contentsline {subsection}{\numberline {15.1}平台基础设施线}{72}{subsection.15.1}%
+\contentsline {subsection}{\numberline {15.2}应用/RAG 研究线}{73}{subsection.15.2}%
 \contentsline {subsection}{\numberline {15.3}安全治理线}{74}{subsection.15.3}%
-\contentsline {subsection}{\numberline {15.4}Agent 岗高压题库：平台基础设施}{75}{subsection.15.4}%
-\contentsline {subsection}{\numberline {15.5}Agent 岗高压题库：应用与 RAG}{77}{subsection.15.5}%
-\contentsline {subsection}{\numberline {15.6}Agent 岗高压题库：安全治理}{78}{subsection.15.6}%
-\contentsline {section}{\numberline {16}第十四轮拷打：Skill 体系深挖}{79}{section.16}%
-\contentsline {subsection}{\numberline {16.1}为什么 Markdown + YAML frontmatter}{79}{subsection.16.1}%
-\contentsline {subsection}{\numberline {16.2}Progressive disclosure 在 Skill 里的含义}{79}{subsection.16.2}%
-\contentsline {subsection}{\numberline {16.3}Scope 为什么不能被 manual enable 绕过}{80}{subsection.16.3}%
-\contentsline {subsection}{\numberline {16.4}Snapshot 为什么是 Skill 运行时的关键}{80}{subsection.16.4}%
-\contentsline {subsection}{\numberline {16.5}Skill 和 MCP 的关系}{80}{subsection.16.5}%
-\contentsline {subsection}{\numberline {16.6}Skill 面试追问清单}{80}{subsection.16.6}%
-\contentsline {section}{\numberline {17}第十五轮拷打：优化路线图怎么讲不虚}{81}{section.17}%
-\contentsline {section}{\numberline {18}第十五轮补充：行业调研来源与选型记录}{82}{section.18}%
-\contentsline {subsection}{\numberline {18.1}外部资料对当前设计的校准}{82}{subsection.18.1}%
-\contentsline {subsection}{\numberline {18.2}Harness 选型记录}{84}{subsection.18.2}%
-\contentsline {subsection}{\numberline {18.3}MCP 选型记录}{85}{subsection.18.3}%
-\contentsline {subsection}{\numberline {18.4}Agent 架构选型记录}{86}{subsection.18.4}%
-\contentsline {subsection}{\numberline {18.5}Skill 选型记录}{86}{subsection.18.5}%
-\contentsline {subsection}{\numberline {18.6}本轮实现 TODO 与验收证据}{87}{subsection.18.6}%
-\contentsline {section}{\numberline {19}第十七轮拷打：继续优化还能补哪些细节}{88}{section.19}%
-\contentsline {subsection}{\numberline {19.1}本轮发现的可优化点}{88}{subsection.19.1}%
-\contentsline {subsection}{\numberline {19.2}选型对比与决策}{89}{subsection.19.2}%
-\contentsline {subsection}{\numberline {19.3}本轮落地证据}{90}{subsection.19.3}%
-\contentsline {subsection}{\numberline {19.4}下一阶段可扩展功能清单}{91}{subsection.19.4}%
-\contentsline {section}{\numberline {20}第十八轮拷打：高级工程师故障注入题}{92}{section.20}%
-\contentsline {subsection}{\numberline {20.1}事故 1：审批回调重复到达，写工具会不会执行两次}{92}{subsection.20.1}%
-\contentsline {subsection}{\numberline {20.2}事故 2：MCP server 返回的 structuredContent 结构错了怎么办}{92}{subsection.20.2}%
-\contentsline {subsection}{\numberline {20.3}事故 3：两个 worker 同时写 Harness 状态，checkpoint 丢了怎么办}{93}{subsection.20.3}%
-\contentsline {subsection}{\numberline {20.4}事故 4：Skill 手动启用绕过租户 scope 怎么办}{93}{subsection.20.4}%
-\contentsline {subsection}{\numberline {20.5}事故 5：RAG 答案错了，如何定位不是一句“模型幻觉”}{94}{subsection.20.5}%
-\contentsline {subsection}{\numberline {20.6}事故 6：预算硬熔断发生在证据不足时，如何避免粗暴失败}{94}{subsection.20.6}%
-\contentsline {subsection}{\numberline {20.7}事故 7：Prompt injection 藏在网页正文里，为什么 schema 仍不够}{94}{subsection.20.7}%
-\contentsline {section}{\numberline {21}第十六轮拷打：Agent 开发岗单页题卡}{95}{section.21}%
-\contentsline {subsection}{\numberline {21.1}题卡 1：Agent 和普通 LLM 应用的分水岭是什么}{96}{subsection.21.1}%
-\contentsline {subsection}{\numberline {21.2}题卡 2：为什么 Agent 系统的核心是状态机}{97}{subsection.21.2}%
-\contentsline {subsection}{\numberline {21.3}题卡 3：DAG 和 StateGraph 有什么区别}{98}{subsection.21.3}%
-\contentsline {subsection}{\numberline {21.4}题卡 4：为什么 Planner 不能直接写最终答案}{99}{subsection.21.4}%
-\contentsline {subsection}{\numberline {21.5}题卡 5：为什么需要 fallback DAG}{100}{subsection.21.5}%
-\contentsline {subsection}{\numberline {21.6}题卡 6：为什么要区分 public status 和 runtime status}{101}{subsection.21.6}%
-\contentsline {subsection}{\numberline {21.7}题卡 7：retryable failed 和 terminal failed 怎么区分}{102}{subsection.21.7}%
-\contentsline {subsection}{\numberline {21.8}题卡 8：Agent 为什么需要 failure memory}{103}{subsection.21.8}%
-\contentsline {subsection}{\numberline {21.9}题卡 9：为什么预算治理必须是硬控制}{104}{subsection.21.9}%
-\contentsline {subsection}{\numberline {21.10}题卡 10：为什么 tool call 是高风险执行面}{105}{subsection.21.10}%
-\contentsline {subsection}{\numberline {21.11}题卡 11：为什么不能相信模型自己做权限判断}{106}{subsection.21.11}%
-\contentsline {subsection}{\numberline {21.12}题卡 12：为什么工具参数必须 schema 校验}{107}{subsection.21.12}%
-\contentsline {subsection}{\numberline {21.13}题卡 13：为什么工具返回也要治理}{108}{subsection.21.13}%
-\contentsline {subsection}{\numberline {21.14}题卡 14：为什么审批要以 DB 为 source of truth}{109}{subsection.21.14}%
-\contentsline {subsection}{\numberline {21.15}题卡 15：审批恢复最容易出什么 bug}{110}{subsection.21.15}%
-\contentsline {subsection}{\numberline {21.16}题卡 16：为什么 SSE 不是任务事实源}{111}{subsection.21.16}%
-\contentsline {subsection}{\numberline {21.17}题卡 17：为什么 trace 和 audit 要分开}{112}{subsection.21.17}%
-\contentsline {subsection}{\numberline {21.18}题卡 18：为什么 Agent eval 不能只看答案分数}{113}{subsection.21.18}%
-\contentsline {subsection}{\numberline {21.19}题卡 19：为什么 RAG 不能替代 Browser}{114}{subsection.21.19}%
-\contentsline {subsection}{\numberline {21.20}题卡 20：为什么 citation 是研究型 Agent 的生命线}{115}{subsection.21.20}%
-\contentsline {subsection}{\numberline {21.21}题卡 21：为什么 Browser 内容要当作不可信数据}{116}{subsection.21.21}%
-\contentsline {subsection}{\numberline {21.22}题卡 22：为什么 internal-first 是治理策略}{117}{subsection.21.22}%
-\contentsline {subsection}{\numberline {21.23}题卡 23：为什么 replan 要带 failure hints}{118}{subsection.21.23}%
-\contentsline {subsection}{\numberline {21.24}题卡 24：为什么多 Agent 对话不适合强流程研究}{119}{subsection.21.24}%
-\contentsline {subsection}{\numberline {21.25}题卡 25：为什么需要 tool allowlist}{120}{subsection.21.25}%
-\contentsline {subsection}{\numberline {21.26}题卡 26：为什么 Skill 不是 prompt 附件}{121}{subsection.21.26}%
-\contentsline {subsection}{\numberline {21.27}题卡 27：为什么 Skill 要 top-k}{122}{subsection.21.27}%
-\contentsline {subsection}{\numberline {21.28}题卡 28：为什么 Skill snapshot 能防止运行漂移}{123}{subsection.21.28}%
-\contentsline {subsection}{\numberline {21.29}题卡 29：为什么 MCP 和 Skill 不能混为一谈}{124}{subsection.21.29}%
-\contentsline {subsection}{\numberline {21.30}题卡 30：为什么 MCP 必须有 server registry}{125}{subsection.21.30}%
-\contentsline {subsection}{\numberline {21.31}题卡 31：为什么 MCP tool schema 不能完全信 server}{126}{subsection.21.31}%
-\contentsline {subsection}{\numberline {21.32}题卡 32：为什么 result hash 有价值}{127}{subsection.21.32}%
-\contentsline {subsection}{\numberline {21.33}题卡 33：为什么要区分 schema invalid 和 tool not allowed}{128}{subsection.21.33}%
-\contentsline {subsection}{\numberline {21.34}题卡 34：为什么 write tool 默认审批}{129}{subsection.21.34}%
-\contentsline {subsection}{\numberline {21.35}题卡 35：为什么 summary length 也是安全策略}{130}{subsection.21.35}%
-\contentsline {subsection}{\numberline {21.36}题卡 36：为什么 long-running Agent 要 session config}{131}{subsection.21.36}%
-\contentsline {subsection}{\numberline {21.37}题卡 37：为什么 active marker 要在 idle 时清理}{132}{subsection.21.37}%
-\contentsline {subsection}{\numberline {21.38}题卡 38：为什么 JSON 损坏不能静默忽略}{133}{subsection.21.38}%
-\contentsline {subsection}{\numberline {21.39}题卡 39：为什么恢复时不能只看最后一行日志}{134}{subsection.21.39}%
-\contentsline {subsection}{\numberline {21.40}题卡 40：为什么多 worker 必须独立工作树}{135}{subsection.21.40}%
-\contentsline {subsection}{\numberline {21.41}题卡 41：为什么 Agent 需要 idempotency}{136}{subsection.21.41}%
-\contentsline {subsection}{\numberline {21.42}题卡 42：为什么 model fallback 要保护 schema}{137}{subsection.21.42}%
-\contentsline {subsection}{\numberline {21.43}题卡 43：为什么不能把 eval 只做成离线脚本}{138}{subsection.21.43}%
-\contentsline {subsection}{\numberline {21.44}题卡 44：为什么 evidence 和 answer 要分开存}{139}{subsection.21.44}%
-\contentsline {subsection}{\numberline {21.45}题卡 45：为什么浏览器自动化需要多层降级}{140}{subsection.21.45}%
-\contentsline {subsection}{\numberline {21.46}题卡 46：为什么 Search 只是入口不是证据终点}{141}{subsection.21.46}%
-\contentsline {subsection}{\numberline {21.47}题卡 47：为什么 Reflection 不应无限循环}{142}{subsection.21.47}%
-\contentsline {subsection}{\numberline {21.48}题卡 48：为什么报告要写不确定性}{143}{subsection.21.48}%
-\contentsline {subsection}{\numberline {21.49}题卡 49：为什么 Agent 需要 human-in-the-loop}{144}{subsection.21.49}%
-\contentsline {subsection}{\numberline {21.50}题卡 50：为什么 “暂停” 不等于 “失败”}{145}{subsection.21.50}%
-\contentsline {subsection}{\numberline {21.51}题卡 51：为什么工具错误要净化}{146}{subsection.21.51}%
-\contentsline {subsection}{\numberline {21.52}题卡 52：为什么 DB 是预算事实源}{147}{subsection.21.52}%
-\contentsline {subsection}{\numberline {21.53}题卡 53：为什么 Postgres + pgvector 适合这个项目}{148}{subsection.21.53}%
-\contentsline {subsection}{\numberline {21.54}题卡 54：为什么结构化输出很重要}{149}{subsection.21.54}%
-\contentsline {subsection}{\numberline {21.55}题卡 55：为什么 prompt injection 不是只靠 prompt 解决}{150}{subsection.21.55}%
-\contentsline {subsection}{\numberline {21.56}题卡 56：为什么 Agent 需要最小权限}{151}{subsection.21.56}%
-\contentsline {subsection}{\numberline {21.57}题卡 57：为什么 “会调用工具” 不等于 “会安全调用工具”}{152}{subsection.21.57}%
-\contentsline {subsection}{\numberline {21.58}题卡 58：为什么要记录 server fingerprint}{153}{subsection.21.58}%
-\contentsline {subsection}{\numberline {21.59}题卡 59：为什么 untrusted server 要直接拒绝}{154}{subsection.21.59}%
-\contentsline {subsection}{\numberline {21.60}题卡 60：为什么 schema invalid 不应该自动重试同样参数}{155}{subsection.21.60}%
-\contentsline {subsection}{\numberline {21.61}题卡 61：为什么报告生成要和取证解耦}{156}{subsection.21.61}%
-\contentsline {subsection}{\numberline {21.62}题卡 62：为什么 Agent 需要可解释路由}{157}{subsection.21.62}%
-\contentsline {subsection}{\numberline {21.63}题卡 63：为什么数据源可信度要分层}{158}{subsection.21.63}%
-\contentsline {subsection}{\numberline {21.64}题卡 64：为什么检索命中不代表可以回答}{159}{subsection.21.64}%
-\contentsline {subsection}{\numberline {21.65}题卡 65：为什么 Browser 节点要受预算控制}{160}{subsection.21.65}%
-\contentsline {subsection}{\numberline {21.66}题卡 66：为什么 search query 要由 Planner 约束}{161}{subsection.21.66}%
-\contentsline {subsection}{\numberline {21.67}题卡 67：为什么要记录 current batch}{162}{subsection.21.67}%
-\contentsline {subsection}{\numberline {21.68}题卡 68：为什么 completed nodes 不能只靠模型声明}{163}{subsection.21.68}%
-\contentsline {subsection}{\numberline {21.69}题卡 69：为什么 Agent 需要停止条件}{164}{subsection.21.69}%
-\contentsline {subsection}{\numberline {21.70}题卡 70：为什么 “部分报告” 是优雅降级}{165}{subsection.21.70}%
-\contentsline {subsection}{\numberline {21.71}题卡 71：为什么 Agent 需要配置化风险等级}{166}{subsection.21.71}%
-\contentsline {subsection}{\numberline {21.72}题卡 72：为什么 tool timeout 是治理而不是性能参数}{167}{subsection.21.72}%
-\contentsline {subsection}{\numberline {21.73}题卡 73：为什么 Agent 需要环境初始化}{168}{subsection.21.73}%
-\contentsline {subsection}{\numberline {21.74}题卡 74：为什么测试输出要为 Agent 设计}{169}{subsection.21.74}%
-\contentsline {subsection}{\numberline {21.75}题卡 75：为什么不能只用日志做恢复}{170}{subsection.21.75}%
-\contentsline {subsection}{\numberline {21.76}题卡 76：为什么 DB 和 Harness 会有双写问题}{171}{subsection.21.76}%
-\contentsline {subsection}{\numberline {21.77}题卡 77：为什么工具审计不能只存在 session JSON}{172}{subsection.21.77}%
-\contentsline {subsection}{\numberline {21.78}题卡 78：为什么 Agent 需要 observability}{173}{subsection.21.78}%
-\contentsline {subsection}{\numberline {21.79}题卡 79：为什么 prompt 也要版本化}{174}{subsection.21.79}%
-\contentsline {subsection}{\numberline {21.80}题卡 80：为什么 Agent 需要 schema repair}{175}{subsection.21.80}%
-\contentsline {subsection}{\numberline {21.81}题卡 81：为什么 “工具越多越强” 是误区}{176}{subsection.21.81}%
-\contentsline {subsection}{\numberline {21.82}题卡 82：为什么上下文窗口不是可靠记忆}{177}{subsection.21.82}%
-\contentsline {subsection}{\numberline {21.83}题卡 83：为什么 Agent 要记录 artifacts}{178}{subsection.21.83}%
-\contentsline {subsection}{\numberline {21.84}题卡 84：为什么用户确认和审批不同}{179}{subsection.21.84}%
-\contentsline {subsection}{\numberline {21.85}题卡 85：为什么要把 source of truth 讲清楚}{180}{subsection.21.85}%
-\contentsline {subsection}{\numberline {21.86}题卡 86：为什么 Agent 安全要做纵深防御}{181}{subsection.21.86}%
-\contentsline {subsection}{\numberline {21.87}题卡 87：为什么要做红队样本库}{182}{subsection.21.87}%
-\contentsline {subsection}{\numberline {21.88}题卡 88：为什么 Agent 系统要有降级路径}{183}{subsection.21.88}%
-\contentsline {subsection}{\numberline {21.89}题卡 89：为什么 “完成” 要有验收证据}{184}{subsection.21.89}%
-\contentsline {subsection}{\numberline {21.90}题卡 90：为什么要把未完成写进笔记}{185}{subsection.21.90}%
-\contentsline {subsection}{\numberline {21.91}题卡 91：为什么 Agent 需要任务优先级}{186}{subsection.21.91}%
-\contentsline {subsection}{\numberline {21.92}题卡 92：为什么 dependency cycle 要检测}{187}{subsection.21.92}%
-\contentsline {subsection}{\numberline {21.93}题卡 93：为什么 blocked 状态不一定要持久化}{188}{subsection.21.93}%
-\contentsline {subsection}{\numberline {21.94}题卡 94：为什么 approval request 要有 request payload}{189}{subsection.21.94}%
-\contentsline {subsection}{\numberline {21.95}题卡 95：为什么工具层要返回统一结构}{190}{subsection.21.95}%
-\contentsline {subsection}{\numberline {21.96}题卡 96：为什么 Agent 要有 query scope}{191}{subsection.21.96}%
-\contentsline {subsection}{\numberline {21.97}题卡 97：为什么 Agent 需要成本归因}{192}{subsection.21.97}%
-\contentsline {subsection}{\numberline {21.98}题卡 98：为什么重试要有 backoff}{193}{subsection.21.98}%
-\contentsline {subsection}{\numberline {21.99}题卡 99：为什么 tool result 不能直接作为最终答案}{194}{subsection.21.99}%
-\contentsline {subsection}{\numberline {21.100}题卡 100：Agent 平台的控制面和数据面怎么拆}{195}{subsection.21.100}%
-\contentsline {subsection}{\numberline {21.101}题卡 101：为什么要区分工具发现和工具授权}{196}{subsection.21.101}%
-\contentsline {subsection}{\numberline {21.102}题卡 102：为什么 Agent 要有审计友好的错误码}{197}{subsection.21.102}%
-\contentsline {subsection}{\numberline {21.103}题卡 103：为什么上下文压缩会影响恢复}{198}{subsection.21.103}%
-\contentsline {subsection}{\numberline {21.104}题卡 104：为什么 Agent 要可暂停}{199}{subsection.21.104}%
-\contentsline {subsection}{\numberline {21.105}题卡 105：为什么 Agent 需要边界表达}{200}{subsection.21.105}%
-\contentsline {section}{\numberline {22}附录：当前仓库现实、边界与演进路线}{200}{section.22}%
-\contentsline {subsection}{\numberline {22.1}当前已核实的现实结论}{200}{subsection.22.1}%
-\contentsline {subsection}{\numberline {22.2}当前仍存在的关键边界}{201}{subsection.22.2}%
-\contentsline {subsection}{\numberline {22.3}建议的三阶段演进}{201}{subsection.22.3}%
-\contentsline {subsection}{\numberline {22.4}最终的面试总结句}{201}{subsection.22.4}%
+\contentsline {subsection}{\numberline {15.4}Agent 岗高压题库：平台基础设施}{74}{subsection.15.4}%
+\contentsline {subsection}{\numberline {15.5}Agent 岗高压题库：应用与 RAG}{76}{subsection.15.5}%
+\contentsline {subsection}{\numberline {15.6}Agent 岗高压题库：安全治理}{77}{subsection.15.6}%
+\contentsline {section}{\numberline {16}第十四轮拷打：Skill 体系深挖}{78}{section.16}%
+\contentsline {subsection}{\numberline {16.1}为什么 Markdown + YAML frontmatter}{78}{subsection.16.1}%
+\contentsline {subsection}{\numberline {16.2}Progressive disclosure 在 Skill 里的含义}{78}{subsection.16.2}%
+\contentsline {subsection}{\numberline {16.3}Scope 为什么不能被 manual enable 绕过}{79}{subsection.16.3}%
+\contentsline {subsection}{\numberline {16.4}Snapshot 为什么是 Skill 运行时的关键}{79}{subsection.16.4}%
+\contentsline {subsection}{\numberline {16.5}Skill 和 MCP 的关系}{79}{subsection.16.5}%
+\contentsline {subsection}{\numberline {16.6}Skill 面试追问清单}{79}{subsection.16.6}%
+\contentsline {section}{\numberline {17}第十五轮拷打：优化路线图怎么讲不虚}{80}{section.17}%
+\contentsline {section}{\numberline {18}第十五轮补充：行业调研来源与选型记录}{81}{section.18}%
+\contentsline {subsection}{\numberline {18.1}外部资料对当前设计的校准}{81}{subsection.18.1}%
+\contentsline {subsection}{\numberline {18.2}Harness 选型记录}{83}{subsection.18.2}%
+\contentsline {subsection}{\numberline {18.3}MCP 选型记录}{84}{subsection.18.3}%
+\contentsline {subsection}{\numberline {18.4}Agent 架构选型记录}{85}{subsection.18.4}%
+\contentsline {subsection}{\numberline {18.5}Skill 选型记录}{85}{subsection.18.5}%
+\contentsline {subsection}{\numberline {18.6}本轮实现 TODO 与验收证据}{86}{subsection.18.6}%
+\contentsline {section}{\numberline {19}第十七轮拷打：继续优化还能补哪些细节}{87}{section.19}%
+\contentsline {subsection}{\numberline {19.1}本轮发现的可优化点}{87}{subsection.19.1}%
+\contentsline {subsection}{\numberline {19.2}选型对比与决策}{88}{subsection.19.2}%
+\contentsline {subsection}{\numberline {19.3}本轮落地证据}{89}{subsection.19.3}%
+\contentsline {subsection}{\numberline {19.4}下一阶段可扩展功能清单}{90}{subsection.19.4}%
+\contentsline {section}{\numberline {20}第十八轮拷打：高级工程师故障注入题}{91}{section.20}%
+\contentsline {subsection}{\numberline {20.1}事故 1：审批回调重复到达，写工具会不会执行两次}{91}{subsection.20.1}%
+\contentsline {subsection}{\numberline {20.2}事故 2：MCP server 返回的 structuredContent 结构错了怎么办}{91}{subsection.20.2}%
+\contentsline {subsection}{\numberline {20.3}事故 3：两个 worker 同时写 Harness 状态，checkpoint 丢了怎么办}{92}{subsection.20.3}%
+\contentsline {subsection}{\numberline {20.4}事故 4：Skill 手动启用绕过租户 scope 怎么办}{92}{subsection.20.4}%
+\contentsline {subsection}{\numberline {20.5}事故 5：RAG 答案错了，如何定位不是一句“模型幻觉”}{93}{subsection.20.5}%
+\contentsline {subsection}{\numberline {20.6}事故 6：预算硬熔断发生在证据不足时，如何避免粗暴失败}{93}{subsection.20.6}%
+\contentsline {subsection}{\numberline {20.7}事故 7：Prompt injection 藏在网页正文里，为什么 schema 仍不够}{93}{subsection.20.7}%
+\contentsline {section}{\numberline {21}第十六轮拷打：Agent 开发岗单页题卡}{94}{section.21}%
+\contentsline {subsection}{\numberline {21.1}题卡 1：Agent 和普通 LLM 应用的分水岭是什么}{95}{subsection.21.1}%
+\contentsline {subsection}{\numberline {21.2}题卡 2：为什么 Agent 系统的核心是状态机}{96}{subsection.21.2}%
+\contentsline {subsection}{\numberline {21.3}题卡 3：DAG 和 StateGraph 有什么区别}{97}{subsection.21.3}%
+\contentsline {subsection}{\numberline {21.4}题卡 4：为什么 Planner 不能直接写最终答案}{98}{subsection.21.4}%
+\contentsline {subsection}{\numberline {21.5}题卡 5：为什么需要 fallback DAG}{99}{subsection.21.5}%
+\contentsline {subsection}{\numberline {21.6}题卡 6：为什么要区分 public status 和 runtime status}{100}{subsection.21.6}%
+\contentsline {subsection}{\numberline {21.7}题卡 7：retryable failed 和 terminal failed 怎么区分}{101}{subsection.21.7}%
+\contentsline {subsection}{\numberline {21.8}题卡 8：Agent 为什么需要 failure memory}{102}{subsection.21.8}%
+\contentsline {subsection}{\numberline {21.9}题卡 9：为什么预算治理必须是硬控制}{103}{subsection.21.9}%
+\contentsline {subsection}{\numberline {21.10}题卡 10：为什么 tool call 是高风险执行面}{104}{subsection.21.10}%
+\contentsline {subsection}{\numberline {21.11}题卡 11：为什么不能相信模型自己做权限判断}{105}{subsection.21.11}%
+\contentsline {subsection}{\numberline {21.12}题卡 12：为什么工具参数必须 schema 校验}{106}{subsection.21.12}%
+\contentsline {subsection}{\numberline {21.13}题卡 13：为什么工具返回也要治理}{107}{subsection.21.13}%
+\contentsline {subsection}{\numberline {21.14}题卡 14：为什么审批要以 DB 为 source of truth}{108}{subsection.21.14}%
+\contentsline {subsection}{\numberline {21.15}题卡 15：审批恢复最容易出什么 bug}{109}{subsection.21.15}%
+\contentsline {subsection}{\numberline {21.16}题卡 16：为什么 SSE 不是任务事实源}{110}{subsection.21.16}%
+\contentsline {subsection}{\numberline {21.17}题卡 17：为什么 trace 和 audit 要分开}{111}{subsection.21.17}%
+\contentsline {subsection}{\numberline {21.18}题卡 18：为什么 Agent eval 不能只看答案分数}{112}{subsection.21.18}%
+\contentsline {subsection}{\numberline {21.19}题卡 19：为什么 RAG 不能替代 Browser}{113}{subsection.21.19}%
+\contentsline {subsection}{\numberline {21.20}题卡 20：为什么 citation 是研究型 Agent 的生命线}{114}{subsection.21.20}%
+\contentsline {subsection}{\numberline {21.21}题卡 21：为什么 Browser 内容要当作不可信数据}{115}{subsection.21.21}%
+\contentsline {subsection}{\numberline {21.22}题卡 22：为什么 internal-first 是治理策略}{116}{subsection.21.22}%
+\contentsline {subsection}{\numberline {21.23}题卡 23：为什么 replan 要带 failure hints}{117}{subsection.21.23}%
+\contentsline {subsection}{\numberline {21.24}题卡 24：为什么多 Agent 对话不适合强流程研究}{118}{subsection.21.24}%
+\contentsline {subsection}{\numberline {21.25}题卡 25：为什么需要 tool allowlist}{119}{subsection.21.25}%
+\contentsline {subsection}{\numberline {21.26}题卡 26：为什么 Skill 不是 prompt 附件}{120}{subsection.21.26}%
+\contentsline {subsection}{\numberline {21.27}题卡 27：为什么 Skill 要 top-k}{121}{subsection.21.27}%
+\contentsline {subsection}{\numberline {21.28}题卡 28：为什么 Skill snapshot 能防止运行漂移}{122}{subsection.21.28}%
+\contentsline {subsection}{\numberline {21.29}题卡 29：为什么 MCP 和 Skill 不能混为一谈}{123}{subsection.21.29}%
+\contentsline {subsection}{\numberline {21.30}题卡 30：为什么 MCP 必须有 server registry}{124}{subsection.21.30}%
+\contentsline {subsection}{\numberline {21.31}题卡 31：为什么 MCP tool schema 不能完全信 server}{125}{subsection.21.31}%
+\contentsline {subsection}{\numberline {21.32}题卡 32：为什么 result hash 有价值}{126}{subsection.21.32}%
+\contentsline {subsection}{\numberline {21.33}题卡 33：为什么要区分 schema invalid 和 tool not allowed}{127}{subsection.21.33}%
+\contentsline {subsection}{\numberline {21.34}题卡 34：为什么 write tool 默认审批}{128}{subsection.21.34}%
+\contentsline {subsection}{\numberline {21.35}题卡 35：为什么 summary length 也是安全策略}{129}{subsection.21.35}%
+\contentsline {subsection}{\numberline {21.36}题卡 36：为什么 long-running Agent 要 session config}{130}{subsection.21.36}%
+\contentsline {subsection}{\numberline {21.37}题卡 37：为什么 active marker 要在 idle 时清理}{131}{subsection.21.37}%
+\contentsline {subsection}{\numberline {21.38}题卡 38：为什么 JSON 损坏不能静默忽略}{132}{subsection.21.38}%
+\contentsline {subsection}{\numberline {21.39}题卡 39：为什么恢复时不能只看最后一行日志}{133}{subsection.21.39}%
+\contentsline {subsection}{\numberline {21.40}题卡 40：为什么多 worker 必须独立工作树}{134}{subsection.21.40}%
+\contentsline {subsection}{\numberline {21.41}题卡 41：为什么 Agent 需要 idempotency}{135}{subsection.21.41}%
+\contentsline {subsection}{\numberline {21.42}题卡 42：为什么 model fallback 要保护 schema}{136}{subsection.21.42}%
+\contentsline {subsection}{\numberline {21.43}题卡 43：为什么不能把 eval 只做成离线脚本}{137}{subsection.21.43}%
+\contentsline {subsection}{\numberline {21.44}题卡 44：为什么 evidence 和 answer 要分开存}{138}{subsection.21.44}%
+\contentsline {subsection}{\numberline {21.45}题卡 45：为什么浏览器自动化需要多层降级}{139}{subsection.21.45}%
+\contentsline {subsection}{\numberline {21.46}题卡 46：为什么 Search 只是入口不是证据终点}{140}{subsection.21.46}%
+\contentsline {subsection}{\numberline {21.47}题卡 47：为什么 Reflection 不应无限循环}{141}{subsection.21.47}%
+\contentsline {subsection}{\numberline {21.48}题卡 48：为什么报告要写不确定性}{142}{subsection.21.48}%
+\contentsline {subsection}{\numberline {21.49}题卡 49：为什么 Agent 需要 human-in-the-loop}{143}{subsection.21.49}%
+\contentsline {subsection}{\numberline {21.50}题卡 50：为什么 “暂停” 不等于 “失败”}{144}{subsection.21.50}%
+\contentsline {subsection}{\numberline {21.51}题卡 51：为什么工具错误要净化}{145}{subsection.21.51}%
+\contentsline {subsection}{\numberline {21.52}题卡 52：为什么 DB 是预算事实源}{146}{subsection.21.52}%
+\contentsline {subsection}{\numberline {21.53}题卡 53：为什么 Postgres + pgvector 适合这个项目}{147}{subsection.21.53}%
+\contentsline {subsection}{\numberline {21.54}题卡 54：为什么结构化输出很重要}{148}{subsection.21.54}%
+\contentsline {subsection}{\numberline {21.55}题卡 55：为什么 prompt injection 不是只靠 prompt 解决}{149}{subsection.21.55}%
+\contentsline {subsection}{\numberline {21.56}题卡 56：为什么 Agent 需要最小权限}{150}{subsection.21.56}%
+\contentsline {subsection}{\numberline {21.57}题卡 57：为什么 “会调用工具” 不等于 “会安全调用工具”}{151}{subsection.21.57}%
+\contentsline {subsection}{\numberline {21.58}题卡 58：为什么要记录 server fingerprint}{152}{subsection.21.58}%
+\contentsline {subsection}{\numberline {21.59}题卡 59：为什么 untrusted server 要直接拒绝}{153}{subsection.21.59}%
+\contentsline {subsection}{\numberline {21.60}题卡 60：为什么 schema invalid 不应该自动重试同样参数}{154}{subsection.21.60}%
+\contentsline {subsection}{\numberline {21.61}题卡 61：为什么报告生成要和取证解耦}{155}{subsection.21.61}%
+\contentsline {subsection}{\numberline {21.62}题卡 62：为什么 Agent 需要可解释路由}{156}{subsection.21.62}%
+\contentsline {subsection}{\numberline {21.63}题卡 63：为什么数据源可信度要分层}{157}{subsection.21.63}%
+\contentsline {subsection}{\numberline {21.64}题卡 64：为什么检索命中不代表可以回答}{158}{subsection.21.64}%
+\contentsline {subsection}{\numberline {21.65}题卡 65：为什么 Browser 节点要受预算控制}{159}{subsection.21.65}%
+\contentsline {subsection}{\numberline {21.66}题卡 66：为什么 search query 要由 Planner 约束}{160}{subsection.21.66}%
+\contentsline {subsection}{\numberline {21.67}题卡 67：为什么要记录 current batch}{161}{subsection.21.67}%
+\contentsline {subsection}{\numberline {21.68}题卡 68：为什么 completed nodes 不能只靠模型声明}{162}{subsection.21.68}%
+\contentsline {subsection}{\numberline {21.69}题卡 69：为什么 Agent 需要停止条件}{163}{subsection.21.69}%
+\contentsline {subsection}{\numberline {21.70}题卡 70：为什么 “部分报告” 是优雅降级}{164}{subsection.21.70}%
+\contentsline {subsection}{\numberline {21.71}题卡 71：为什么 Agent 需要配置化风险等级}{165}{subsection.21.71}%
+\contentsline {subsection}{\numberline {21.72}题卡 72：为什么 tool timeout 是治理而不是性能参数}{166}{subsection.21.72}%
+\contentsline {subsection}{\numberline {21.73}题卡 73：为什么 Agent 需要环境初始化}{167}{subsection.21.73}%
+\contentsline {subsection}{\numberline {21.74}题卡 74：为什么测试输出要为 Agent 设计}{168}{subsection.21.74}%
+\contentsline {subsection}{\numberline {21.75}题卡 75：为什么不能只用日志做恢复}{169}{subsection.21.75}%
+\contentsline {subsection}{\numberline {21.76}题卡 76：为什么 DB 和 Harness 会有双写问题}{170}{subsection.21.76}%
+\contentsline {subsection}{\numberline {21.77}题卡 77：为什么工具审计不能只存在 session JSON}{171}{subsection.21.77}%
+\contentsline {subsection}{\numberline {21.78}题卡 78：为什么 Agent 需要 observability}{172}{subsection.21.78}%
+\contentsline {subsection}{\numberline {21.79}题卡 79：为什么 prompt 也要版本化}{173}{subsection.21.79}%
+\contentsline {subsection}{\numberline {21.80}题卡 80：为什么 Agent 需要 schema repair}{174}{subsection.21.80}%
+\contentsline {subsection}{\numberline {21.81}题卡 81：为什么 “工具越多越强” 是误区}{175}{subsection.21.81}%
+\contentsline {subsection}{\numberline {21.82}题卡 82：为什么上下文窗口不是可靠记忆}{176}{subsection.21.82}%
+\contentsline {subsection}{\numberline {21.83}题卡 83：为什么 Agent 要记录 artifacts}{177}{subsection.21.83}%
+\contentsline {subsection}{\numberline {21.84}题卡 84：为什么用户确认和审批不同}{178}{subsection.21.84}%
+\contentsline {subsection}{\numberline {21.85}题卡 85：为什么要把 source of truth 讲清楚}{179}{subsection.21.85}%
+\contentsline {subsection}{\numberline {21.86}题卡 86：为什么 Agent 安全要做纵深防御}{180}{subsection.21.86}%
+\contentsline {subsection}{\numberline {21.87}题卡 87：为什么要做红队样本库}{181}{subsection.21.87}%
+\contentsline {subsection}{\numberline {21.88}题卡 88：为什么 Agent 系统要有降级路径}{182}{subsection.21.88}%
+\contentsline {subsection}{\numberline {21.89}题卡 89：为什么 “完成” 要有验收证据}{183}{subsection.21.89}%
+\contentsline {subsection}{\numberline {21.90}题卡 90：为什么要把未完成写进笔记}{184}{subsection.21.90}%
+\contentsline {subsection}{\numberline {21.91}题卡 91：为什么 Agent 需要任务优先级}{185}{subsection.21.91}%
+\contentsline {subsection}{\numberline {21.92}题卡 92：为什么 dependency cycle 要检测}{186}{subsection.21.92}%
+\contentsline {subsection}{\numberline {21.93}题卡 93：为什么 blocked 状态不一定要持久化}{187}{subsection.21.93}%
+\contentsline {subsection}{\numberline {21.94}题卡 94：为什么 approval request 要有 request payload}{188}{subsection.21.94}%
+\contentsline {subsection}{\numberline {21.95}题卡 95：为什么工具层要返回统一结构}{189}{subsection.21.95}%
+\contentsline {subsection}{\numberline {21.96}题卡 96：为什么 Agent 要有 query scope}{190}{subsection.21.96}%
+\contentsline {subsection}{\numberline {21.97}题卡 97：为什么 Agent 需要成本归因}{191}{subsection.21.97}%
+\contentsline {subsection}{\numberline {21.98}题卡 98：为什么重试要有 backoff}{192}{subsection.21.98}%
+\contentsline {subsection}{\numberline {21.99}题卡 99：为什么 tool result 不能直接作为最终答案}{193}{subsection.21.99}%
+\contentsline {subsection}{\numberline {21.100}题卡 100：Agent 平台的控制面和数据面怎么拆}{194}{subsection.21.100}%
+\contentsline {subsection}{\numberline {21.101}题卡 101：为什么要区分工具发现和工具授权}{195}{subsection.21.101}%
+\contentsline {subsection}{\numberline {21.102}题卡 102：为什么 Agent 要有审计友好的错误码}{196}{subsection.21.102}%
+\contentsline {subsection}{\numberline {21.103}题卡 103：为什么上下文压缩会影响恢复}{197}{subsection.21.103}%
+\contentsline {subsection}{\numberline {21.104}题卡 104：为什么 Agent 要可暂停}{198}{subsection.21.104}%
+\contentsline {subsection}{\numberline {21.105}题卡 105：为什么 Agent 需要边界表达}{199}{subsection.21.105}%
+\contentsline {section}{\numberline {22}生产级韧性与安全重构：设计说明与面试答法}{199}{section.22}%
+\contentsline {subsection}{\numberline {22.1}可退化架构：从全有或全无变成健康、降级、恢复}{200}{subsection.22.1}%
+\contentsline {paragraph}{设计。}{200}{subsection.22.1}%
+\contentsline {paragraph}{备选方案与取舍。}{200}{subsection.22.1}%
+\contentsline {paragraph}{收益、代价与边界。}{200}{subsection.22.1}%
+\contentsline {subsection}{\numberline {22.2}安全边界：数据归属、令牌生命周期与默认拒绝}{201}{subsection.22.2}%
+\contentsline {paragraph}{设计。}{201}{subsection.22.2}%
+\contentsline {paragraph}{备选方案与取舍。}{201}{subsection.22.2}%
+\contentsline {paragraph}{已经考虑与尚未考虑。}{201}{subsection.22.2}%
+\contentsline {subsection}{\numberline {22.3}配置与密钥：按主体隔离，并讲清威胁模型}{201}{subsection.22.3}%
+\contentsline {paragraph}{设计。}{201}{subsection.22.3}%
+\contentsline {paragraph}{方案比较。}{202}{subsection.22.3}%
+\contentsline {paragraph}{收益、代价与遗漏。}{202}{subsection.22.3}%
+\contentsline {subsection}{\numberline {22.4}兼容层与 facade：重构不应一次性破坏调用面}{202}{subsection.22.4}%
+\contentsline {subsection}{\numberline {22.5}统一 LLM adapter：把 provider 差异隔离在边界}{202}{subsection.22.5}%
+\contentsline {paragraph}{设计。}{202}{subsection.22.5}%
+\contentsline {paragraph}{为什么不是业务层 if/else。}{202}{subsection.22.5}%
+\contentsline {subsection}{\numberline {22.6}提示注入：把不可信数据放进数据流，而不是一句 system prompt}{203}{subsection.22.6}%
+\contentsline {subsection}{\numberline {22.7}健康检查：liveness 与 readiness 必须分开}{203}{subsection.22.7}%
+\contentsline {subsection}{\numberline {22.8}上传与文档生命周期：不是一个 save(file)}{203}{subsection.22.8}%
+\contentsline {subsection}{\numberline {22.9}备份导出/导入：merge-only 仍然要有事务边界}{204}{subsection.22.9}%
+\contentsline {subsection}{\numberline {22.10}本地持久化：JSON 也要遵守数据库式原子写}{204}{subsection.22.10}%
+\contentsline {subsection}{\numberline {22.11}测试文化：每个真实事故都留下可回归的名字}{204}{subsection.22.11}%
+\contentsline {subsection}{\numberline {22.12}不在本轮范围的后台自动化与未来多主体}{205}{subsection.22.12}%
+\contentsline {subsection}{\numberline {22.13}最终取舍总表}{205}{subsection.22.13}%
+\contentsline {section}{\numberline {23}附录：当前仓库现实、边界与演进路线}{206}{section.23}%
+\contentsline {subsection}{\numberline {23.1}当前已核实的现实结论}{206}{subsection.23.1}%
+\contentsline {subsection}{\numberline {23.2}当前仍存在的关键边界}{206}{subsection.23.2}%
+\contentsline {subsection}{\numberline {23.3}建议的三阶段演进}{207}{subsection.23.3}%
+\contentsline {subsection}{\numberline {23.4}最终的面试总结句}{207}{subsection.23.4}%

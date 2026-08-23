@@ -15,7 +15,7 @@ import asyncio
 import json
 import os
 import sys
-from typing import Any, AsyncGenerator, Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -341,7 +341,7 @@ def mock_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         port = 8000
         reload = False
         log_level = "INFO"
-        cors_origins = ["http://localhost:5173"]
+        cors_origins = ("http://localhost:5173",)
 
     class MockSettings:
         llm = MockLLMSettings()

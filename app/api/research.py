@@ -5,17 +5,28 @@ Research API endpoints: SSE streaming and research session management.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import uuid
-from datetime import datetime
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+import asyncpg
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import get_settings
+from app.core.time import utc_now_naive
+from app.db.connection import get_db_pool
+from app.db.json import dumps_json
+from app.governance import HarnessSupervisor, RuntimePersistence
+from app.governance.runtime import normalize_tool_audit_rows, public_status_from_runtime
+from app.graph.compiler import compile_research_graph
+from app.graph.state import (
+    RuntimeStatus,
+    TaskStatus,
+    create_initial_state,
+)
 from app.guardrails import (
     build_guardrail_decision,
     build_review_status,
@@ -23,17 +34,13 @@ from app.guardrails import (
     get_research_budget,
     normalize_research_length,
 )
-from app.graph.compiler import compile_research_graph
-from app.graph.state import create_initial_state, ResearchState, RuntimeStatus, TaskStatus
 from app.observability.sse_manager import get_sse_manager
-from app.db.connection import get_db_pool
-from app.db.json import dumps_json
-from app.governance import RuntimePersistence, HarnessSupervisor
-from app.governance.runtime import normalize_tool_audit_rows, public_status_from_runtime
+from app.security.auth import Principal, require_principal
 from app.skills import get_skill_registry
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1/research", tags=["research"])
+router = APIRouter(prefix="/api/v1/research", tags=["research"], dependencies=[Depends(require_principal)])
+principal_dependency = Depends(require_principal)
 ACCUMULATING_STATE_KEYS = {
     "agent_trace",
     "tool_histories",
@@ -82,6 +89,11 @@ KNOWN_STATE_KEYS = {
     "guardrail_trace",
     "errors",
 }
+
+
+def _principal_id(principal: Principal | Any) -> str | None:
+    """Keep direct unit calls compatible; HTTP requests always receive a Principal."""
+    return principal.id if isinstance(principal, Principal) else None
 
 
 def _iter_state_updates(chunk: dict[str, Any]):
@@ -255,7 +267,7 @@ async def research_event_generator(
     # Send initial connection event
     yield {
         "event": "connected",
-        "data": {"session_id": session_id, "timestamp": datetime.utcnow().isoformat()},
+        "data": {"session_id": session_id, "timestamp": utc_now_naive().isoformat()},
     }
 
     try:
@@ -270,8 +282,18 @@ async def research_event_generator(
         }
 
 
+async def _owned_session_exists(session_id: str, owner_id: str) -> bool:
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        return bool(await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM research_sessions WHERE id = $1::uuid AND owner_id = $2::uuid)",
+            session_id,
+            owner_id,
+        ))
+
+
 @router.get("/stream/{session_id}")
-async def stream_research(session_id: str):
+async def stream_research(session_id: str, principal: Principal = principal_dependency):
     """
     SSE endpoint for real-time research progress streaming.
 
@@ -289,6 +311,8 @@ async def stream_research(session_id: str):
     - done: Task completion
     - workflow_error: Workflow/business error occurred
     """
+    if not await _owned_session_exists(session_id, principal.id):
+        raise HTTPException(status_code=404, detail="Session not found")
     return EventSourceResponse(
         research_event_generator(session_id),
         media_type="text/event-stream",
@@ -303,6 +327,7 @@ async def stream_research(session_id: str):
 async def create_research(
     request: ResearchRequest,
     background_tasks: BackgroundTasks,
+    principal: Principal = principal_dependency,
 ):
     """
     Start a new research task.
@@ -315,7 +340,7 @@ async def create_research(
     decision = build_guardrail_decision(request.query, user_confirmed=request.user_confirmed)
     output_length = normalize_research_length(request.output_length)
     budget = get_research_budget(output_length)
-    skill_context = (await get_skill_registry().resolve_for_session(
+    skill_context = (await get_skill_registry(_principal_id(principal)).resolve_for_session(
         query=request.query,
         manually_enabled_skill_ids=request.enabled_skill_ids,
         manually_disabled_skill_ids=request.disabled_skill_ids,
@@ -341,8 +366,8 @@ async def create_research(
             """
             INSERT INTO research_sessions (id, user_query, status, guardrail_decision, guardrail_trace,
                                            evidence_status, review_status, prompt_profile, prompt_template,
-                                           enabled_tools, skill_context, created_at, updated_at)
-            VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb, $11::jsonb, $12, $12)
+                                            enabled_tools, skill_context, owner_id, created_at, updated_at)
+            VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb, $11::jsonb, $12::uuid, $13, $13)
             ON CONFLICT (id) DO UPDATE SET
                 user_query = $2,
                 status = $3,
@@ -354,7 +379,7 @@ async def create_research(
                 prompt_template = $9,
                 enabled_tools = $10::jsonb,
                 skill_context = $11::jsonb,
-                updated_at = $12
+                updated_at = $13
             """,
             session_id,
             request.query,
@@ -367,7 +392,8 @@ async def create_research(
             compose_guardrail_prompt(request.query, decision),
             dumps_json(skill_context.get("effective_tool_allowlist") or decision.enabled_tools),
             dumps_json(skill_context),
-            datetime.utcnow(),
+            _principal_id(principal),
+            utc_now_naive(),
         )
 
     if decision.must_confirm and not request.user_confirmed:
@@ -392,6 +418,7 @@ async def create_research(
         rag_group=request.rag_group,
         output_length=output_length.value,
         skill_context=skill_context,
+        owner_id=_principal_id(principal),
     )
 
     return ResearchResponse(
@@ -406,7 +433,7 @@ async def create_research(
 
 
 @router.get("/status/{session_id}", response_model=ResearchStatus)
-async def get_research_status(session_id: str):
+async def get_research_status(session_id: str, principal: Principal = principal_dependency):
     """Get the current status of a research session."""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
@@ -419,9 +446,9 @@ async def get_research_status(session_id: str):
             FROM research_sessions
             rs
             LEFT JOIN session_budget_state sbs ON sbs.session_id = rs.id
-            WHERE rs.id = $1::uuid
+            WHERE rs.id = $1::uuid AND rs.owner_id = $2::uuid
             """,
-            session_id,
+            session_id, _principal_id(principal),
         )
 
     if not row:
@@ -456,7 +483,7 @@ async def get_research_status(session_id: str):
 
 
 @router.get("/{session_id}")
-async def get_research_result(session_id: str):
+async def get_research_result(session_id: str, principal: Principal = principal_dependency):
     """Get the final research result."""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
@@ -465,9 +492,9 @@ async def get_research_result(session_id: str):
             SELECT id, user_query, status, final_report, citations, agent_trace, review_status, created_at, completed_at
                  , skill_context
             FROM research_sessions
-            WHERE id = $1::uuid
+            WHERE id = $1::uuid AND owner_id = $2::uuid
             """,
-            session_id,
+            session_id, _principal_id(principal),
         )
         citation_rows = await conn.fetch(
             """
@@ -475,9 +502,10 @@ async def get_research_result(session_id: str):
                    extracted_evidence, relevance_score, access_timestamp
             FROM citations
             WHERE session_id = $1::uuid
+              AND EXISTS (SELECT 1 FROM research_sessions WHERE id = $1::uuid AND owner_id = $2::uuid)
             ORDER BY CAST(SPLIT_PART(citation_id, ':', 2) AS INTEGER)
             """,
-            session_id,
+            session_id, _principal_id(principal),
         )
 
     if not row:
@@ -502,13 +530,13 @@ async def get_research_result(session_id: str):
 
 
 @router.get("/{session_id}/tool-calls", response_model=list[ToolCallAuditRecord])
-async def get_research_tool_calls(session_id: str):
+async def get_research_tool_calls(session_id: str, principal: Principal = principal_dependency):
     """Get persisted per-call tool audit rows for a research session."""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         session_exists = await conn.fetchrow(
-            "SELECT id FROM research_sessions WHERE id = $1::uuid",
-            session_id,
+            "SELECT id FROM research_sessions WHERE id = $1::uuid AND owner_id = $2::uuid",
+            session_id, _principal_id(principal),
         )
         if not session_exists:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -522,9 +550,14 @@ async def get_research_tool_calls(session_id: str):
                    started_at, completed_at, created_at
             FROM tool_call_audit
             WHERE session_id = $1::uuid
+              AND EXISTS (
+                  SELECT 1 FROM research_sessions
+                  WHERE id = $1::uuid AND owner_id = $2::uuid
+              )
             ORDER BY created_at ASC, call_id ASC
             """,
             session_id,
+            _principal_id(principal),
         )
 
     result: list[ToolCallAuditRecord] = []
@@ -559,13 +592,13 @@ async def get_research_tool_calls(session_id: str):
 
 
 @router.get("/{session_id}/approvals", response_model=list[ApprovalRequestRecord])
-async def get_research_approvals(session_id: str):
+async def get_research_approvals(session_id: str, principal: Principal = principal_dependency):
     """Get approval requests for a research session."""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         session_exists = await conn.fetchrow(
-            "SELECT id FROM research_sessions WHERE id = $1::uuid",
-            session_id,
+            "SELECT id FROM research_sessions WHERE id = $1::uuid AND owner_id = $2::uuid",
+            session_id, _principal_id(principal),
         )
         if not session_exists:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -575,9 +608,14 @@ async def get_research_approvals(session_id: str):
                    request_payload_json, status, requested_at, resolved_at, resolved_by, comment
             FROM approval_requests
             WHERE session_id = $1::uuid
+              AND EXISTS (
+                  SELECT 1 FROM research_sessions
+                  WHERE id = $1::uuid AND owner_id = $2::uuid
+              )
             ORDER BY requested_at ASC, approval_id ASC
             """,
             session_id,
+            _principal_id(principal),
         )
     return [
         ApprovalRequestRecord(
@@ -603,6 +641,7 @@ async def resolve_research_approval(
     session_id: str,
     approval_id: str,
     request: ApprovalActionRequest,
+    principal: Principal = principal_dependency,
 ):
     """Resolve an approval request and persist decision for harness-driven resume."""
     pool = await get_db_pool()
@@ -613,9 +652,10 @@ async def resolve_research_approval(
             SELECT approval_id, session_id, status, request_payload_json
             FROM approval_requests
             WHERE approval_id = $1 AND session_id = $2::uuid
+              AND EXISTS (SELECT 1 FROM research_sessions WHERE id = $2::uuid AND owner_id = $3::uuid)
             """,
             approval_id,
-            session_id,
+            session_id, _principal_id(principal),
         )
         if not approval:
             raise HTTPException(status_code=404, detail="Approval request not found")
@@ -632,7 +672,7 @@ async def resolve_research_approval(
             WHERE approval_id = $5 AND session_id = $6::uuid
             """,
             resolved_status,
-            datetime.utcnow(),
+            utc_now_naive(),
             request.approved_by,
             request.comment,
             approval_id,
@@ -653,7 +693,7 @@ async def resolve_research_approval(
                     item = {
                         **item,
                         "status": "approved",
-                        "resolved_at": datetime.utcnow().isoformat(),
+                        "resolved_at": utc_now_naive().isoformat(),
                         "resolved_by": request.approved_by,
                         "comment": request.comment,
                     }
@@ -675,6 +715,7 @@ async def resolve_research_approval(
                     allow_web_after_rag_hit=bool(state_snapshot.get("allow_web_after_rag_hit", False)),
                     rag_group=state_snapshot.get("rag_group"),
                     output_length=state_snapshot.get("output_length", "medium"),
+                    owner_id=state_snapshot.get("session", {}).get("owner_id"),
                 )
             )
     return {
@@ -699,6 +740,7 @@ async def run_research_workflow(
     rag_group: str | None = None,
     output_length: str = "medium",
     skill_context: dict[str, Any] | None = None,
+    owner_id: str | None = None,
 ):
     """
     Execute the LangGraph research workflow in background.
@@ -713,17 +755,19 @@ async def run_research_workflow(
     runtime_persistence = RuntimePersistence()
     harness = HarnessSupervisor(get_settings().harness.state_root)
     settings = get_settings()
+    budget = get_research_budget(output_length)
 
     try:
         # Emit start event
         await sse.publish(session_id, "workflow_start", {
             "session_id": session_id,
             "query": query,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_naive().isoformat(),
         })
 
         # Create initial state
         state = create_initial_state(query, session_id)
+        state.setdefault("session", {})["owner_id"] = owner_id
         state["session"]["max_revisions"] = max_revision
         state["session"]["output_length"] = output_length
         decision = build_guardrail_decision(query)
@@ -741,7 +785,7 @@ async def run_research_workflow(
             "web_search_reason": None,
         }
         state["session"]["prompt_profile"] = decision.prompt_profile.value
-        state["session"]["enabled_tools"] = skill_context.get("effective_tool_allowlist") or decision.enabled_tools
+        state["session"]["enabled_tools"] = (skill_context or {}).get("effective_tool_allowlist") or decision.enabled_tools
         state["session"]["prompt_template"] = compose_guardrail_prompt(query, decision)
         state["runtime_status"] = RuntimeStatus.RUNNING.value
         state["skill_context"] = skill_context or {}
@@ -823,7 +867,7 @@ async def run_research_workflow(
                 try:
                     snapshot = graph.get_state(config)
                     checkpoint_ref = getattr(snapshot, "config", None)
-                except Exception:
+                except (OSError, RuntimeError, TypeError, ValueError):
                     checkpoint_ref = None
                 checkpoint_seq = int(checkpoint_state.get("session", {}).get("checkpoint_seq", 0) or 0) + 1
                 checkpoint_state.setdefault("session", {})
@@ -863,7 +907,7 @@ async def run_research_workflow(
         if final_state:
             pool = await get_db_pool()
             async with pool.acquire() as conn:
-                completed_at = datetime.utcnow()
+                completed_at = utc_now_naive()
                 citations = final_state.get("citations", [])
                 tool_histories = final_state.get("tool_histories", [])
                 tool_call_total = sum(
@@ -1097,19 +1141,19 @@ async def run_research_workflow(
         await sse.publish(session_id, "done", {
             "session_id": session_id,
             "status": final_state.get("status", "completed") if final_state else "completed",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_naive().isoformat(),
         })
 
         logger.info(f"Research workflow completed: {session_id}")
 
-    except Exception as e:
-        logger.error(f"Research workflow error for {session_id}: {e}", exc_info=True)
+    except Exception as exc:
+        logger.exception("Research workflow error for %s", session_id)
 
         # Emit error
         await sse.publish(session_id, "workflow_error", {
             "session_id": session_id,
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(exc),
+            "timestamp": utc_now_naive().isoformat(),
         })
 
         # Update database status - FIX: properly log errors instead of bare except:pass
@@ -1122,7 +1166,7 @@ async def run_research_workflow(
                     SET status = 'failed', updated_at = $1
                     WHERE id = $2::uuid
                     """,
-                    datetime.utcnow(),
+                    utc_now_naive(),
                     session_id,
                 )
             harness.upsert_task(
@@ -1133,11 +1177,11 @@ async def run_research_workflow(
                 current_batch=[],
                 checkpoint_seq=0,
                 pending_approval_id=None,
-                last_error={"category": "workflow_error", "message": str(e)},
+                last_error={"category": "workflow_error", "message": str(exc)},
                 worker_id=settings.harness.worker_id,
                 state_snapshot=None,
             )
-        except Exception as db_error:
+        except (OSError, RuntimeError, asyncpg.PostgresError) as db_error:
             # FIX: Log the error instead of silently swallowing
             logger.error(
                 f"Failed to update session {session_id} status to 'failed': {db_error}"

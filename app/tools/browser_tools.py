@@ -8,12 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +47,9 @@ def browse_webpage(url: str, max_chars: int = 2000) -> str:
             import nest_asyncio
             nest_asyncio.apply()
             return asyncio.run(_browse_async(url, max_chars))
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
             logger.error(f"Browser error for {url}: {e}")
-            return f"Error browsing {url}: {str(e)}"
+            return f"Error browsing {url}: {e!s}"
 
 
 async def _browse_async(url: str, max_chars: int) -> str:
@@ -102,9 +98,9 @@ async def _browse_async(url: str, max_chars: int) -> str:
             result = "\n".join(content_parts)
             return result[:max_chars]
 
-    except Exception as e:
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
         logger.error(f"Async browse error for {url}: {e}")
-        return f"Error: {str(e)}"
+        return f"Error: {e!s}"
 
 
 def get_browser_tools():

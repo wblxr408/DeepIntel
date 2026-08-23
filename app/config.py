@@ -13,11 +13,13 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ProviderName = Literal["qwen", "deepseek", "openai", "ollama", "anthropic"]
+
 
 class LLMSettings(BaseSettings):
     """LLM provider configuration with fallback strategy."""
 
-    provider: Literal["qwen", "deepseek", "openai"] = Field(
+    provider: ProviderName = Field(
         default="qwen",
         description="Primary LLM provider"
     )
@@ -37,11 +39,11 @@ class LLMSettings(BaseSettings):
     max_tokens: int = Field(default=8192, ge=256)
 
     # Fallback settings
-    fallback_provider: Literal["qwen", "deepseek", "openai"] | None = Field(default=None)
+    fallback_provider: ProviderName | None = Field(default=None)
     fallback_model: str | None = Field(default=None)
     fallback_api_key: str | None = Field(default=None)
 
-    model_config = SettingsConfigDict(env_prefix="LLM_")
+    model_config = SettingsConfigDict(env_prefix="LLM_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 class DatabaseSettings(BaseSettings):
@@ -54,7 +56,7 @@ class DatabaseSettings(BaseSettings):
     pool_size: int = Field(default=10, ge=1, le=100)
     max_overflow: int = Field(default=20, ge=0)
 
-    model_config = SettingsConfigDict(env_prefix="DATABASE_")
+    model_config = SettingsConfigDict(env_prefix="DATABASE_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 class RedisSettings(BaseSettings):
@@ -64,7 +66,7 @@ class RedisSettings(BaseSettings):
     session_ttl: int = Field(default=604800, description="7 days in seconds")  # 7 days
     cache_ttl: int = Field(default=259200, description="3 days in seconds")     # 3 days
 
-    model_config = SettingsConfigDict(env_prefix="REDIS_")
+    model_config = SettingsConfigDict(env_prefix="REDIS_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 class RAGSettings(BaseSettings):
@@ -78,7 +80,7 @@ class RAGSettings(BaseSettings):
     rerank_top_n: int = Field(default=10, description="Final count after reranking")
     rrf_k: int = Field(default=60, description="RRF fusion parameter")
 
-    model_config = SettingsConfigDict(env_prefix="RAG_")
+    model_config = SettingsConfigDict(env_prefix="RAG_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 class BrowserSettings(BaseSettings):
@@ -98,7 +100,7 @@ class BrowserSettings(BaseSettings):
     skim_max_chars: int = Field(default=2000)
     deep_max_chars: int = Field(default=5000)
 
-    model_config = SettingsConfigDict(env_prefix="PLAYWRIGHT_")
+    model_config = SettingsConfigDict(env_prefix="PLAYWRIGHT_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 class APISettings(BaseSettings):
@@ -109,8 +111,50 @@ class APISettings(BaseSettings):
     reload: bool = Field(default=False)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="INFO")
     cors_origins: list[str] = Field(default=["http://localhost:5173", "http://localhost:3000"])
+    trusted_hosts: list[str] = Field(default=["localhost", "127.0.0.1"])
 
-    model_config = SettingsConfigDict(env_prefix="API_")
+    model_config = SettingsConfigDict(env_prefix="API_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+
+class SecuritySettings(BaseSettings):
+    """Authentication, encryption and request-boundary configuration."""
+
+    auth_enabled: bool = Field(default=True)
+    environment: Literal["development", "production"] = Field(default="development")
+    encryption_key: str = Field(default="")
+    session_ttl_seconds: int = Field(default=604800, ge=300, le=2592000)
+    secure_cookies: bool = Field(default=True)
+    cookie_name: str = Field(default="deepintel_session")
+    login_rate_limit: int = Field(default=10, ge=1, le=100)
+    upload_rate_limit: int = Field(default=30, ge=1, le=500)
+    upload_max_bytes: int = Field(default=25 * 1024 * 1024, ge=1024)
+    upload_max_pages: int = Field(default=500, ge=1, le=10000)
+
+    model_config = SettingsConfigDict(env_prefix="SECURITY_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    def validate_production_requirements(self, cors_origins: list[str]) -> None:
+        """Fail closed for deployment settings that protect persistent secrets."""
+        if self.environment != "production":
+            return
+        if self.auth_enabled and (not self.encryption_key or self.encryption_key.startswith("replace-with-")):
+            raise ValueError("SECURITY_ENCRYPTION_KEY must be set to a non-example value in production")
+        if self.auth_enabled and not self.secure_cookies:
+            raise ValueError("SECURITY_SECURE_COOKIES must be true in production")
+        if "*" in cors_origins:
+            raise ValueError("API_CORS_ORIGINS cannot include '*' in production")
+
+
+class ResilienceSettings(BaseSettings):
+    """Network and optional-capability failure handling."""
+
+    capability_retry_seconds: int = Field(default=30, ge=1, le=3600)
+    llm_connect_timeout_seconds: float = Field(default=10.0, gt=0)
+    llm_read_timeout_seconds: float = Field(default=90.0, gt=0)
+    llm_write_timeout_seconds: float = Field(default=30.0, gt=0)
+    llm_pool_timeout_seconds: float = Field(default=10.0, gt=0)
+    llm_max_retries: int = Field(default=1, ge=0, le=5)
+
+    model_config = SettingsConfigDict(env_prefix="RESILIENCE_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 class HarnessSettings(BaseSettings):
@@ -119,7 +163,7 @@ class HarnessSettings(BaseSettings):
     state_root: str = Field(default="./data/harness")
     worker_id: str = Field(default="worker-1")
 
-    model_config = SettingsConfigDict(env_prefix="HARNESS_")
+    model_config = SettingsConfigDict(env_prefix="HARNESS_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 class SkillSettings(BaseSettings):
@@ -132,7 +176,7 @@ class SkillSettings(BaseSettings):
     match_cache_ttl: int = Field(default=900, ge=30, le=86400)
     content_cache_ttl: int = Field(default=1800, ge=30, le=86400)
 
-    model_config = SettingsConfigDict(env_prefix="SKILLS_")
+    model_config = SettingsConfigDict(env_prefix="SKILLS_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 class Settings(BaseSettings):
@@ -145,6 +189,8 @@ class Settings(BaseSettings):
     rag: RAGSettings = Field(default_factory=RAGSettings)
     browser: BrowserSettings = Field(default_factory=BrowserSettings)
     api: APISettings = Field(default_factory=APISettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
+    resilience: ResilienceSettings = Field(default_factory=ResilienceSettings)
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
     skills: SkillSettings = Field(default_factory=SkillSettings)
 
@@ -158,6 +204,9 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    def validate_startup_security(self) -> None:
+        self.security.validate_production_requirements(self.api.cors_origins)
 
 
 @lru_cache

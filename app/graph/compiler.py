@@ -37,42 +37,44 @@ LangGraph StateGraph compiler for the research workflow.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
-from datetime import timedelta
+import logging
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 from langgraph.constants import END, START, Send
 from langgraph.graph import StateGraph
 
+from app.config import get_settings
+from app.core.time import utc_now_naive
+from app.governance import McpPolicyProxy, McpToolRequest
 from app.graph.state import (
-    ResearchState,
+    AgentType,
     DAGDefinition,
-    PlanNode,
+    NodeOutcome,
     PlanEdge,
+    PlanNode,
+    ResearchState,
+    RuntimeStatus,
     StepStatus,
     TaskStatus,
-    AgentType,
-    NodeOutcome,
-    RuntimeStatus,
     ToolCallRecord,
     ToolInvocationHistory,
     VerificationResult,
-    serialize_dag,
     deserialize_dag,
+    serialize_dag,
 )
-from app.config import get_settings
 from app.guardrails import (
     build_answer_gate_message,
     build_evidence_gate,
     build_guardrail_decision,
     get_research_budget,
-    normalize_research_length,
-    is_tool_allowed,
     record_guardrail_event,
     should_require_action_approval,
 )
-from app.governance import McpPolicyProxy, McpToolRequest
+from app.observability.trace import EventType
+
+logger = logging.getLogger(__name__)
 
 TOOL_NODE_TYPES = {"search", "browser", "rag", "mcp"}
 WEB_NODE_TYPES = {"search", "browser"}
@@ -100,7 +102,7 @@ def _agent_skill_hints(state: ResearchState, agent_name: str) -> list[str]:
 
 
 def _effective_tool_allowlist(state: ResearchState, decision: dict[str, Any]) -> set[str]:
-    skill_tools = set((_skill_context(state).get("effective_tool_allowlist") or []))
+    skill_tools = set(_skill_context(state).get("effective_tool_allowlist") or [])
     decision_tools = set(decision.get("enabled_tools", ["search", "browser", "rag"]))
     if skill_tools:
         return decision_tools.intersection(skill_tools)
@@ -148,7 +150,7 @@ def _build_budget_state(state: ResearchState) -> dict[str, Any]:
         try:
             elapsed_wall_clock_seconds = max(
                 0,
-                int((datetime.utcnow() - datetime.fromisoformat(started_at)).total_seconds()),
+                int((utc_now_naive() - datetime.fromisoformat(started_at)).total_seconds()),
             )
         except ValueError:
             elapsed_wall_clock_seconds = 0
@@ -358,7 +360,7 @@ def _should_retry_node(
         return False, "non_retryable_category"
     if record and record.get("next_retry_at"):
         try:
-            if datetime.utcnow() < datetime.fromisoformat(str(record["next_retry_at"])):
+            if utc_now_naive() < datetime.fromisoformat(str(record["next_retry_at"])):
                 return False, "backoff_active"
         except ValueError:
             pass
@@ -381,7 +383,7 @@ def _compute_next_retry_at(error_category: str | None, retry_count: int) -> tupl
     base = _base_backoff_seconds(error_category)
     exponent = max(0, retry_count - 1)
     backoff_seconds = min(base * (2 ** exponent), 60)
-    next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
+    next_retry_at = utc_now_naive() + timedelta(seconds=backoff_seconds)
     return next_retry_at.isoformat(), backoff_seconds
 
 
@@ -495,7 +497,7 @@ def _make_approval_request(
         "reason": reason,
         "request_payload": request_payload,
         "status": "pending",
-        "requested_at": datetime.utcnow().isoformat(),
+        "requested_at": utc_now_naive().isoformat(),
     }
 
 
@@ -543,15 +545,15 @@ def track_tool_call(agent_type: AgentType, tool_name: str):
                 if (state["tool_histories"]
                         and state["tool_histories"][-1].get("agent_type") == agent_str):
                     state["tool_histories"][-1]["tool_calls"][-1]["status"] = "success"
-                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = datetime.utcnow().isoformat()
+                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = utc_now_naive().isoformat()
                     state["tool_histories"][-1]["tool_calls"][-1]["duration_ms"] = int((time.perf_counter() - start_time) * 1000)
                     state["tool_histories"][-1]["tool_calls"][-1]["result_summary"] = str(result)[:200]
                 return result
-            except Exception as e:
+            except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
                 if (state["tool_histories"]
                         and state["tool_histories"][-1].get("agent_type") == agent_str):
                     state["tool_histories"][-1]["tool_calls"][-1]["status"] = "error"
-                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = datetime.utcnow().isoformat()
+                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = utc_now_naive().isoformat()
                     state["tool_histories"][-1]["tool_calls"][-1]["error"] = str(e)
                 raise
 
@@ -576,15 +578,15 @@ def track_tool_call(agent_type: AgentType, tool_name: str):
                 if (state["tool_histories"]
                         and state["tool_histories"][-1].get("agent_type") == agent_str):
                     state["tool_histories"][-1]["tool_calls"][-1]["status"] = "success"
-                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = datetime.utcnow().isoformat()
+                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = utc_now_naive().isoformat()
                     state["tool_histories"][-1]["tool_calls"][-1]["duration_ms"] = int((time.perf_counter() - start_time) * 1000)
                     state["tool_histories"][-1]["tool_calls"][-1]["result_summary"] = str(result)[:200]
                 return result
-            except Exception as e:
+            except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
                 if (state["tool_histories"]
                         and state["tool_histories"][-1].get("agent_type") == agent_str):
                     state["tool_histories"][-1]["tool_calls"][-1]["status"] = "error"
-                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = datetime.utcnow().isoformat()
+                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = utc_now_naive().isoformat()
                     state["tool_histories"][-1]["tool_calls"][-1]["error"] = str(e)
                 raise
 
@@ -649,9 +651,9 @@ def _finish_tool_history(
     """Finalize a structured tool history entry."""
     tool_call = history["tool_calls"][-1]
     tool_call["status"] = status
-    tool_call["completed_at"] = datetime.utcnow().isoformat()
+    tool_call["completed_at"] = utc_now_naive().isoformat()
     started_at = datetime.fromisoformat(tool_call["started_at"])
-    tool_call["duration_ms"] = int((datetime.utcnow() - started_at).total_seconds() * 1000)
+    tool_call["duration_ms"] = int((utc_now_naive() - started_at).total_seconds() * 1000)
     if result_summary is not None:
         tool_call["result_summary"] = result_summary[:200]
     if error is not None:
@@ -683,7 +685,7 @@ def planner_node(state: ResearchState) -> dict:
     输出: dag（序列化的 DAGDefinition）, agent_trace
     """
     from app.agents.planner import PlannerAgent
-    from app.observability.trace import emit_event, EventType
+    from app.observability.trace import EventType, emit_event
 
     # 追踪事件
     emit_event(state, EventType.AGENT_START, "planner", f"Planning research for: {state['user_query']}")
@@ -716,7 +718,7 @@ def planner_node(state: ResearchState) -> dict:
 
     # 更新会话元数据
     session = state.get("session", {})
-    session["updated_at"] = datetime.utcnow().isoformat()
+    session["updated_at"] = utc_now_naive().isoformat()
     session, budget_state = _apply_llm_usage_to_state(state, "planner", agent.last_usage)
 
     return {
@@ -744,7 +746,7 @@ def dag_executor_node(state: ResearchState) -> dict:
     输入: dag（DAGDefinition）
     输出: current_executing_nodes, agent_trace
     """
-    from app.observability.trace import emit_event, EventType
+    from app.observability.trace import EventType, emit_event
 
     dag = deserialize_dag(state["dag"])
     execution_order = dag.get_executable_order()
@@ -795,7 +797,7 @@ def dag_executor_node(state: ResearchState) -> dict:
                 default=None,
             )
             if next_retry_at is not None:
-                delay_seconds = max(0.0, min((next_retry_at - datetime.utcnow()).total_seconds(), 5.0))
+                delay_seconds = max(0.0, min((next_retry_at - utc_now_naive()).total_seconds(), 5.0))
                 if delay_seconds > 0:
                     time.sleep(delay_seconds)
         emit_event(state, EventType.AGENT_COMPLETE, "dag_executor", "All DAG nodes completed")
@@ -1022,10 +1024,14 @@ def should_continue_dag(state: ResearchState) -> str:
                 deferred_retry_exists = True
                 break
             for record in records:
-                if record.get("node_type") == node.node_type and record.get("query") == node.query:
-                    if record.get("next_retry_at") and not record.get("repeat_blocked"):
-                        deferred_retry_exists = True
-                        break
+                if (
+                    record.get("node_type") == node.node_type
+                    and record.get("query") == node.query
+                    and record.get("next_retry_at")
+                    and not record.get("repeat_blocked")
+                ):
+                    deferred_retry_exists = True
+                    break
             if deferred_retry_exists:
                 break
 
@@ -1071,9 +1077,9 @@ def search_node(state: ResearchState) -> dict:
     输出: collected_evidence, tool_histories, agent_trace
     """
     from app.agents.search import SearchAgent
-    from app.graph.state import Evidence, AgentEvent
-    from app.observability.trace import emit_event, EventType
+    from app.graph.state import AgentEvent, Evidence
     from app.guardrails import record_guardrail_event, validate_tool_invocation
+    from app.observability.trace import EventType
 
     dag = deserialize_dag(state["dag"])
     executing_nodes = state.get("executing_nodes", state.get("current_executing_nodes", []))
@@ -1229,7 +1235,7 @@ def search_node(state: ResearchState) -> dict:
                 retry_count=node.retry_count,
                 result_count=len(results),
             ))
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
             node.status = StepStatus.FAILED
             node.retry_count += 1
             category = _classify_error_category(str(e))
@@ -1240,7 +1246,7 @@ def search_node(state: ResearchState) -> dict:
                 state,
                 EventType.TOOL_ERROR,
                 "search",
-                f"Search failed: {str(e)}",
+                f"Search failed: {e!s}",
                 {"tool_name": "duckduckgo_search", "status": "error", "error": str(e)},
             ))
             _finish_tool_history(tool_history, status="error", error=str(e))
@@ -1282,9 +1288,9 @@ def browser_node(state: ResearchState) -> dict:
     输出: collected_evidence, tool_histories, agent_trace
     """
     from app.agents.browser import BrowserAgent
-    from app.graph.state import Evidence, AgentEvent
-    from app.observability.trace import emit_event, EventType
+    from app.graph.state import AgentEvent, Evidence
     from app.guardrails import record_guardrail_event, validate_tool_invocation
+    from app.observability.trace import EventType
 
     dag = deserialize_dag(state["dag"])
     executing_nodes = state.get("executing_nodes", state.get("current_executing_nodes", []))
@@ -1436,7 +1442,7 @@ def browser_node(state: ResearchState) -> dict:
                 retry_count=node.retry_count,
                 result_count=len(results),
             ))
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
             node.status = StepStatus.FAILED
             node.retry_count += 1
             category = _classify_error_category(str(e))
@@ -1447,7 +1453,7 @@ def browser_node(state: ResearchState) -> dict:
                 state,
                 EventType.TOOL_ERROR,
                 "browser",
-                f"Browse failed: {str(e)}",
+                f"Browse failed: {e!s}",
                 {"tool_name": "browse_webpage", "status": "error", "error": str(e)},
             ))
             _finish_tool_history(tool_history, status="error", error=str(e))
@@ -1489,9 +1495,9 @@ def rag_node(state: ResearchState) -> dict:
     输出: collected_evidence, tool_histories, agent_trace
     """
     from app.agents.rag import RAGAgent
-    from app.graph.state import Evidence, AgentEvent
-    from app.observability.trace import emit_event, EventType
+    from app.graph.state import AgentEvent, Evidence
     from app.guardrails import record_guardrail_event, validate_tool_invocation
+    from app.observability.trace import EventType
 
     dag = deserialize_dag(state["dag"])
     executing_nodes = state.get("executing_nodes", state.get("current_executing_nodes", []))
@@ -1603,6 +1609,7 @@ def rag_node(state: ResearchState) -> dict:
                 node.query,
                 state["user_query"],
                 group=state.get("rag_group"),
+                owner_id=state.get("session", {}).get("owner_id"),
             )[:max_results]
             node.result = {"results": [r.model_dump() for r in results]}
             node.confidence = 0.88 if results else 0.0
@@ -1640,7 +1647,7 @@ def rag_node(state: ResearchState) -> dict:
                 retry_count=node.retry_count,
                 result_count=len(results),
             ))
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
             node.status = StepStatus.FAILED
             node.retry_count += 1
             category = _classify_error_category(str(e))
@@ -1651,7 +1658,7 @@ def rag_node(state: ResearchState) -> dict:
                 state,
                 EventType.TOOL_ERROR,
                 "rag",
-                f"RAG retrieval failed: {str(e)}",
+                f"RAG retrieval failed: {e!s}",
                 {"tool_name": "knowledge_base_search", "status": "error", "error": str(e)},
             ))
             _finish_tool_history(tool_history, status="error", error=str(e))
@@ -1748,8 +1755,8 @@ def analyst_node(state: ResearchState) -> dict:
     输出: analysis, agent_trace
     """
     from app.agents.analyst import AnalystAgent
-    from app.graph.state import deserialize_evidence, Evidence, AgentEvent
-    from app.observability.trace import emit_event, EventType
+    from app.graph.state import AgentEvent, deserialize_evidence
+    from app.observability.trace import EventType
 
     evidence_list = [deserialize_evidence(e) for e in state.get("collected_evidence", [])]
     evidence_gate = build_evidence_gate(evidence_list)
@@ -1826,8 +1833,8 @@ def reflection_node(state: ResearchState) -> dict:
     输出: verification, revision_needed, agent_trace
     """
     from app.agents.reflection import ReflectionAgent
-    from app.graph.state import deserialize_evidence, Evidence, AgentEvent
-    from app.observability.trace import emit_event, EventType
+    from app.graph.state import AgentEvent, deserialize_evidence
+    from app.observability.trace import EventType, emit_event
 
     evidence_list = [deserialize_evidence(e) for e in state.get("collected_evidence", [])]
 
@@ -1907,7 +1914,7 @@ def replan_node(state: ResearchState) -> dict:
 
     session = state.get("session", {})
     session["revision_count"] = revision_count
-    session["updated_at"] = datetime.utcnow().isoformat()
+    session["updated_at"] = utc_now_naive().isoformat()
 
     from app.agents.planner import PlannerAgent
 
@@ -1923,7 +1930,7 @@ def replan_node(state: ResearchState) -> dict:
     dag = _enforce_internal_first_dag(dag, state["user_query"])
     session, budget_state = _apply_llm_usage_to_state(state, "replan", agent.last_usage)
 
-    from app.observability.trace import emit_event, EventType
+    from app.observability.trace import EventType, emit_event
     emit_event(
         state, EventType.AGENT_START, "replan",
         f"Replanning (attempt {revision_count})"
@@ -1955,9 +1962,10 @@ async def report_node(state: ResearchState) -> dict:
     输出: final_report, status
     """
     from app.agents.report import ReportAgent
-    from app.graph.state import deserialize_evidence, AgentEvent
-    from app.observability.trace import emit_event, EventType
+    from app.graph.state import AgentEvent, deserialize_evidence
+    from app.llm_client import StreamInterruptedError
     from app.observability.sse_manager import get_sse_manager
+    from app.observability.trace import EventType
 
     evidence_list = [deserialize_evidence(e) for e in state.get("collected_evidence", [])]
     evidence_gate = build_evidence_gate(evidence_list)
@@ -1986,7 +1994,7 @@ async def report_node(state: ResearchState) -> dict:
         ).model_dump()]
         session = state.get("session", {})
         session["status"] = TaskStatus.COMPLETED.value
-        session["completed_at"] = datetime.utcnow().isoformat()
+        session["completed_at"] = utc_now_naive().isoformat()
         return {
             "final_report": f"# Research Report\n\n{message}\n",
             "citations": [],
@@ -2023,17 +2031,38 @@ async def report_node(state: ResearchState) -> dict:
                 })
             ))
 
-    report, citations = agent.generate_stream(
-        user_query=state["user_query"],
-        analysis=state["analysis"],
-        evidence_list=evidence_list,
-        reflection=verification,
-        output_length=state.get("output_length") or state.get("session", {}).get("output_length"),
-        skill_prompt=_skill_prompt(state) or None,
-        report_hints=_agent_skill_hints(state, "report"),
-        on_chunk=on_chunk,
-        on_citation=on_citation,
-    )
+    try:
+        report, citations = agent.generate_stream(
+            user_query=state["user_query"],
+            analysis=state["analysis"],
+            evidence_list=evidence_list,
+            reflection=verification,
+            output_length=state.get("output_length") or state.get("session", {}).get("output_length"),
+            skill_prompt=_skill_prompt(state) or None,
+            report_hints=_agent_skill_hints(state, "report"),
+            on_chunk=on_chunk,
+            on_citation=on_citation,
+        )
+    except StreamInterruptedError:
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks)
+        session = state.get("session", {})
+        session["status"] = TaskStatus.FAILED.value
+        return {
+            "status": TaskStatus.FAILED.value,
+            "session": session,
+            "review_status": {
+                "blocked": False,
+                "last_error_category": "llm_stream_interrupted",
+                "retryable": True,
+            },
+            "errors": ["llm_stream_interrupted_after_output"],
+            "agent_trace": [start_event, AgentEvent(
+                agent="report",
+                event_type="agent_error",
+                content="LLM stream interrupted after output; retry requires a new report request.",
+            ).model_dump()],
+        }
     session, budget_state = _apply_llm_usage_to_state(state, "report", agent.last_usage)
 
     if pending_tasks:
@@ -2041,7 +2070,7 @@ async def report_node(state: ResearchState) -> dict:
 
     # 更新会话状态
     session["status"] = TaskStatus.COMPLETED.value
-    session["completed_at"] = datetime.utcnow().isoformat()
+    session["completed_at"] = utc_now_naive().isoformat()
 
     complete_event = _append_trace_event(state, EventType.AGENT_COMPLETE, "report", f"Report generated: {len(report)} chars")
 
@@ -2172,12 +2201,12 @@ def compile_research_graph() -> StateGraph:
 
     if settings.redis.url:
         try:
-            from langgraph.checkpoint.redis import RedisSaver
             import redis as sync_redis
+            from langgraph.checkpoint.redis import RedisSaver
             r = sync_redis.from_url(settings.redis.url)
             checkpointer = RedisSaver(r)
-        except Exception:
-            pass
+        except (ImportError, OSError, RuntimeError, TypeError, ValueError, KeyError):
+            logger.warning("Redis checkpointer is unavailable; using in-memory checkpoints")
 
     if not checkpointer:
         from langgraph.checkpoint.memory import MemorySaver

@@ -7,11 +7,11 @@ from app.guardrails.policy import (
     EvidenceGateResult,
     GuardrailDecision,
     PromptProfile,
-    RiskLevel,
     ResearchLength,
+    RiskLevel,
+    TaskIntent,
     get_research_budget,
     normalize_research_length,
-    TaskIntent,
 )
 
 __all__ = [
@@ -19,21 +19,21 @@ __all__ = [
     "EvidenceGateResult",
     "GuardrailDecision",
     "PromptProfile",
-    "RiskLevel",
     "ResearchLength",
+    "RiskLevel",
     "TaskIntent",
-    "get_research_budget",
-    "normalize_research_length",
     "build_answer_gate_message",
     "build_evidence_gate",
-    "build_review_status",
     "build_guardrail_decision",
     "build_prompt_profile_message",
+    "build_review_status",
     "compose_guardrail_prompt",
+    "get_research_budget",
     "is_tool_allowed",
+    "normalize_research_length",
     "record_guardrail_event",
-    "validate_tool_invocation",
     "should_require_action_approval",
+    "validate_tool_invocation",
 ]
 
 

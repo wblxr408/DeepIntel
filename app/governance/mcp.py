@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from app.db.connection import get_db_pool
 
@@ -159,7 +160,7 @@ class McpPolicyProxy:
         if isinstance(raw_policy, str):
             try:
                 parsed = json.loads(raw_policy)
-            except Exception:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 return {}
             return parsed if isinstance(parsed, dict) else {}
         return {}

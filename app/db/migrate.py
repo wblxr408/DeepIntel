@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
-from pathlib import Path
 
 import asyncpg
+
 from app.db.text_search import regconfig_sql_literal, resolve_text_search_config
 
 logger = logging.getLogger(__name__)
@@ -420,7 +419,7 @@ async def run_migration(
                     fts_config=regconfig_sql_literal(fts_config),
                 )
                 await conn.execute(schema)
-            except Exception as exc:
+            except (OSError, RuntimeError, asyncpg.PostgresError) as exc:
                 logger.warning(
                     "Migration failed with text search config '%s'; retrying with 'simple': %s",
                     fts_config,
@@ -450,6 +449,7 @@ async def run_migration(
 def main() -> None:
     """CLI entry point for migration."""
     import argparse
+
     from app.config import get_settings
 
     parser = argparse.ArgumentParser(description="Run database migrations")

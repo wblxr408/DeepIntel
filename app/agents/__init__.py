@@ -11,20 +11,20 @@ Each agent is a self-contained unit responsible for a specific task:
 - ReportAgent: generates final Markdown reports
 """
 
-from app.agents.planner import PlannerAgent
-from app.agents.search import SearchAgent
-from app.agents.browser import BrowserAgent
-from app.agents.rag import RAGAgent
 from app.agents.analyst import AnalystAgent
+from app.agents.browser import BrowserAgent
+from app.agents.planner import PlannerAgent
+from app.agents.rag import RAGAgent
 from app.agents.reflection import ReflectionAgent
 from app.agents.report import ReportAgent
+from app.agents.search import SearchAgent
 
 __all__ = [
-    "PlannerAgent",
-    "SearchAgent",
-    "BrowserAgent",
-    "RAGAgent",
     "AnalystAgent",
+    "BrowserAgent",
+    "PlannerAgent",
+    "RAGAgent",
     "ReflectionAgent",
     "ReportAgent",
+    "SearchAgent",
 ]

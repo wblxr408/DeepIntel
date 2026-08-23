@@ -38,11 +38,12 @@ ResearchState definition for LangGraph StateGraph.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from enum import Enum
 from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field
+
+from app.core.time import utc_now_naive
 
 
 def merge_lists(left: list | None, right: list | None) -> list:
@@ -214,7 +215,7 @@ class DAGDefinition(BaseModel):
     """
     dag_id: str = Field(default_factory=lambda: f"dag-{uuid.uuid4().hex[:8]}")
     dag_name: str
-    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = Field(default_factory=lambda: utc_now_naive().isoformat())
     nodes: list[PlanNode] = Field(default_factory=list)
     edges: list[PlanEdge] = Field(default_factory=list)
 
@@ -250,9 +251,12 @@ class DAGDefinition(BaseModel):
                     if neighbor not in processed:
                         # 检查所有前置节点是否都已处理
                         node = next((n for n in self.nodes if n.node_id == neighbor), None)
-                        if node and all(dep in processed for dep in node.depends_on):
-                            if neighbor not in next_batch:
-                                next_batch.append(neighbor)
+                        if (
+                            node
+                            and all(dep in processed for dep in node.depends_on)
+                            and neighbor not in next_batch
+                        ):
+                            next_batch.append(neighbor)
 
             current_batch = next_batch
 
@@ -288,7 +292,7 @@ class ToolCallRecord(BaseModel):
     # 输入参数（脱敏处理）
     args: dict[str, Any] = Field(default_factory=dict)
     # 调用时间
-    started_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    started_at: str = Field(default_factory=lambda: utc_now_naive().isoformat())
     completed_at: str | None = None
     duration_ms: int | None = None
     # 状态
@@ -367,8 +371,8 @@ class SessionMetadata(BaseModel):
     """
     session_id: str
     user_query: str
-    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-    updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = Field(default_factory=lambda: utc_now_naive().isoformat())
+    updated_at: str = Field(default_factory=lambda: utc_now_naive().isoformat())
     completed_at: str | None = None
     # 当前检查点 ID
     checkpoint_id: str | None = None
@@ -401,18 +405,6 @@ class ClaimEvidence(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0, default=0.5)
     is_verified: bool = False
     verification_dimensions: list[VerificationDimension] = Field(default_factory=list)
-
-
-class HallucinatedClaim(BaseModel):
-    """
-    幻觉声明（主题 5）。
-
-    对应主题 5：Reflection Agent 检测出的问题声明。
-    """
-    claim: str
-    severity: Literal["high", "medium", "low"] = "medium"
-    reason: str
-    suggested_fix: str
 
 
 class Citation(BaseModel):
@@ -537,7 +529,7 @@ class ErrorRecord(BaseModel):
     agent: str
     error_type: str
     message: str
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = Field(default_factory=lambda: utc_now_naive().isoformat())
     recoverable: bool = True
 
 
@@ -559,7 +551,7 @@ class Evidence(BaseModel):
     source_type: Literal["web", "document", "knowledge_base"] = "web"
     # 来源 Agent
     collected_by: AgentType
-    collected_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    collected_at: str = Field(default_factory=lambda: utc_now_naive().isoformat())
     # 可信度
     reliability: float = Field(ge=0.0, le=1.0, default=0.7)
     # Token 消耗估计
@@ -641,42 +633,17 @@ class ResearchState(TypedDict):
     """
 
     # ===== 主题 1 & 4: 任务与会话 =====
-    task_id: str
-    user_query: str
-    created_at: str
-    status: str                        # TaskStatus
-    session: dict                    # SessionMetadata
 
     # ===== 主题 2: DAG =====
-    dag: dict | None                # DAGDefinition (序列化)
-    current_executing_nodes: list[str]  # 当前执行的节点
-    completed_nodes: list[str]        # 已完成节点
 
     # ===== 主题 3: 工具调用历史 =====
-    tool_histories: Annotated[list[dict], merge_lists]  # ToolInvocationHistory[]
-    collected_evidence: Annotated[list[dict], merge_lists]  # Evidence[]
 
     # ===== 兼容旧版字段 =====
     # backward compat: legacy search/browser/rag results (used by analyst_node)
-    search_results: Annotated[list[dict], merge_lists] = []
-    browser_results: Annotated[list[dict], merge_lists] = []
-    rag_results: Annotated[list[dict], merge_lists] = []
-    aggregated_evidence: Annotated[list[dict], merge_lists] = []
 
     # ===== 主题 5: 校验 =====
-    verification: dict | None       # VerificationResult
-    revision_needed: bool
-    revision_count: int
 
     # ===== 输出 =====
-    analysis: str
-    final_report: str
-    citations: list[dict]
-    guardrail_decision: dict | None
-    evidence_status: dict | None
-    review_status: dict | None
-    failure_memory: dict | None
-    user_confirmed: bool
     allow_web_after_rag_hit: bool
     rag_group: str | None
     retrieval_policy: dict | None
@@ -687,9 +654,6 @@ class ResearchState(TypedDict):
     skill_context: dict | None
 
     # ===== 可观测性 =====
-    agent_trace: Annotated[list[dict], merge_lists]
-    guardrail_trace: Annotated[list[dict], merge_lists] = []
-    errors: list[dict]
 
 
 # ==============================================================
@@ -706,7 +670,7 @@ def create_initial_state(
     工厂函数，对应主题 1：自主工作流的起点
     对应主题 4：长生命周期会话的初始化
     """
-    now = datetime.utcnow().isoformat()
+    now = utc_now_naive().isoformat()
     session_id = task_id or str(uuid.uuid4())
 
     session_meta = SessionMetadata(
@@ -797,38 +761,38 @@ class AgentEvent(BaseModel):
     agent: str
     event_type: str  # agent_start / agent_complete / tool_start / tool_complete / error
     content: str
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = Field(default_factory=lambda: utc_now_naive().isoformat())
 
 
 # PlanStep 是 PlanNode 的别名（向后兼容旧代码）
 PlanStep = PlanNode
 __all__ = [
+    "AgentEvent",
     "AgentType",
-    "StepStatus",
-    "TaskStatus",
-    "RuntimeStatus",
+    "ClaimConflict",
+    "ClaimEvidence",
+    "DAGDefinition",
+    "Evidence",
+    "HallucinatedClaim",
+    "NodeOutcome",
     "PageType",
-    "VerificationDimension",
+    "PlanEdge",
     "PlanNode",
     "PlanStep",  # alias for backward compat
-    "PlanEdge",
-    "DAGDefinition",
+    "ReflectionResult",  # alias
+    "ResearchState",
+    "RuntimeStatus",
+    "SessionMetadata",
+    "StepStatus",
+    "TaskStatus",
     "ToolCallRecord",
     "ToolInvocationHistory",
-    "NodeOutcome",
-    "SessionMetadata",
-    "ClaimEvidence",
-    "HallucinatedClaim",
-    "ClaimConflict",
+    "VerificationDimension",
     "VerificationResult",
-    "ReflectionResult",  # alias
-    "Evidence",
-    "ResearchState",
     "create_initial_state",
-    "serialize_dag",
     "deserialize_dag",
-    "deserialize_steps",
     "deserialize_evidence",
-    "AgentEvent",
+    "deserialize_steps",
+    "serialize_dag",
 ]
 

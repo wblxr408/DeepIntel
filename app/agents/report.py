@@ -7,12 +7,24 @@ Generates a structured, well-formatted research report with source attribution.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from app.config import get_settings
-from app.guardrails import build_guardrail_decision, build_prompt_profile_message, get_research_budget
 from app.graph.state import Citation, Evidence
-from app.llm_client import collect_usage_metrics, create_llm_client, get_llm_model
+from app.guardrails import (
+    build_guardrail_decision,
+    build_prompt_profile_message,
+    get_research_budget,
+)
+from app.llm_client import (
+    StreamInterruptedError,
+    collect_usage_metrics,
+    create_fallback_llm_client,
+    create_llm_client,
+    get_llm_model,
+)
+from app.security.prompt_security import untrusted_context
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -141,8 +153,6 @@ class ReportAgent:
         decision = build_guardrail_decision(user_query)
         budget = get_research_budget(output_length)
         system_prompt = f"{build_prompt_profile_message(decision, user_query)}\n\n{self.SYSTEM_PROMPT}"
-        if skill_prompt:
-            system_prompt = f"{system_prompt}\n\n## Active Skill Context\n{skill_prompt.strip()}"
         if report_hints:
             system_prompt = (
                 f"{system_prompt}\n\n## Report Skill Instructions\n"
@@ -186,11 +196,13 @@ class ReportAgent:
                 "role": "user",
                 "content": f"""Research Topic: {user_query}
 
+{untrusted_context('skill_content', skill_prompt or '') if skill_prompt else ''}
+
 Analyst's Analysis:
-{analysis}
+{untrusted_context('analyst_output', analysis, limit=12000)}
 
 Evidence Sources:
-{formatted_evidence}
+{untrusted_context('external_evidence', formatted_evidence, limit=18000)}
 
 {citation_note}
 
@@ -202,23 +214,45 @@ Make sure every factual claim has a [citation:N] reference."""
         ]
 
         try:
-            stream = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.3,
-                max_tokens=budget["report_max_tokens"],
-                stream=True,
-            )
             chunks: list[str] = []
-            for event in stream:
-                if not event.choices:
-                    continue
-                delta = event.choices[0].delta.content or ""
-                if not delta:
-                    continue
-                chunks.append(delta)
-                if on_chunk:
-                    on_chunk(delta)
+            active_model = self.model
+
+            def consume(stream: Any) -> None:
+                for event in stream:
+                    if not event.choices:
+                        continue
+                    delta = event.choices[0].delta.content or ""
+                    if not delta:
+                        continue
+                    chunks.append(delta)
+                    if on_chunk:
+                        on_chunk(delta)
+
+            try:
+                consume(self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=budget["report_max_tokens"],
+                    stream=True,
+                ))
+            except Exception as primary_error:
+                if chunks:
+                    raise StreamInterruptedError(
+                        "primary_llm_stream_interrupted_after_output"
+                    ) from primary_error
+                fallback = create_fallback_llm_client()
+                if fallback is None:
+                    raise
+                fallback_client, active_model = fallback
+                logger.warning("Primary report stream failed before output; using fallback: %s", type(primary_error).__name__)
+                consume(fallback_client.chat.completions.create(
+                    model=active_model,
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=budget["report_max_tokens"],
+                    stream=True,
+                ))
 
             content = "".join(chunks).strip()
             if not content:
@@ -234,7 +268,7 @@ Make sure every factual claim has a [citation:N] reference."""
 
             self.last_usage = collect_usage_metrics(
                 response=None,
-                model=self.model,
+                model=active_model,
                 messages=messages,
                 completion_text=content,
             )
@@ -242,7 +276,12 @@ Make sure every factual claim has a [citation:N] reference."""
             logger.info(f"Report: generated {len(content)} chars, {len(citations)} citations")
             return content, citations
 
-        except Exception as e:
+        except StreamInterruptedError:
+            # Do not replace a partially emitted report with a second model's
+            # response; the workflow must mark this as recoverable instead.
+            self.last_usage = None
+            raise
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.error(f"Report generation error: {e}")
             self.last_usage = None
             fallback = self._fallback_report(user_query, evidence_list, citations)

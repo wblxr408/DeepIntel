@@ -7,7 +7,6 @@ Uses BAAI/bge-reranker-v2-m3 for cross-encoder scoring.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer

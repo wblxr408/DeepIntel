@@ -32,15 +32,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from playwright.async_api import Error as PlaywrightError
 
 from app.config import get_settings
 from app.graph.state import BrowserResult, Citation, PageType, PlanStep
+from app.llm_client import call_chat_with_fallback, create_fallback_llm_client
 
 if TYPE_CHECKING:
-    from playwright.async_api import async_playwright, Browser, Page, Playwright
+    from playwright.async_api import Browser, Page, Playwright
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,7 @@ class URLDiscovery:
     这是 Browser Use 的第一步：用户给的是查询，Agent 需要找到正确的页面。
     """
 
-    SEARCH_ENGINES = [
+    SEARCH_ENGINES: ClassVar[list[str]] = [
         "https://www.google.com/search?q={q}&hl=zh-CN",
         "https://www.bing.com/search?q={q}&ensearch=1",
         "https://duckduckgo.com/?q={q}&ia=web",
@@ -115,7 +117,7 @@ class SmartScroller:
 
     async def auto_scroll(
         self,
-        page: "Page",
+        page: Page,
         target_content_type: str = "article",
     ) -> dict[str, Any]:
         """
@@ -128,7 +130,6 @@ class SmartScroller:
             "loaded_more_button": 是否点击了加载更多,
         }
         """
-        from playwright.async_api import TimeoutError as PlaywrightTimeout
 
         stats = {
             "scroll_count": 0,
@@ -143,7 +144,7 @@ class SmartScroller:
             # 获取当前页面高度
             try:
                 current_height = await page.evaluate("document.body.scrollHeight")
-            except Exception:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                 break
 
             # 检测是否有新内容
@@ -156,7 +157,7 @@ class SmartScroller:
                     "window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'})"
                 )
                 await asyncio.sleep(self.scroll_delay_ms / 1000)
-            except Exception:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                 break
 
             stats["scroll_count"] += 1
@@ -169,7 +170,7 @@ class SmartScroller:
                 )
                 if at_bottom:
                     stats["reached_bottom"] = True
-            except Exception:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                 pass
 
             # 点击"加载更多"按钮
@@ -180,7 +181,7 @@ class SmartScroller:
                     await asyncio.sleep(1000)
                     stats["loaded_more_button"] = True
                     logger.info(f"Clicked 'load more' button, scroll {i+1}")
-                except Exception:
+                except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                     pass
 
             # 如果到达底部且没有加载更多按钮，停止
@@ -189,7 +190,7 @@ class SmartScroller:
 
         return stats
 
-    async def _find_load_more_button(self, page: "Page"):
+    async def _find_load_more_button(self, page: Page):
         """查找并返回"加载更多"按钮。"""
         from playwright.async_api import TimeoutError
 
@@ -216,7 +217,7 @@ class SmartScroller:
 
     async def find_and_click_target(
         self,
-        page: "Page",
+        page: Page,
         target_text: str,
     ) -> bool:
         """
@@ -238,7 +239,7 @@ class SmartScroller:
                     await el.click(timeout=3000)
                     await asyncio.sleep(500)
                     return True
-            except Exception:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                 continue
 
         return False
@@ -255,7 +256,7 @@ class StructuredExtractor:
     支持：表格、JSON-LD、列表、评论、报价等。
     """
 
-    async def extract_all(self, page: "Page") -> dict[str, Any]:
+    async def extract_all(self, page: Page) -> dict[str, Any]:
         """
         提取页面中所有可用的结构化数据。
         """
@@ -269,7 +270,7 @@ class StructuredExtractor:
 
         return results
 
-    async def extract_tables(self, page: "Page") -> list[list[str]]:
+    async def extract_tables(self, page: Page) -> list[list[str]]:
         """提取页面中的所有表格。"""
         tables = []
         try:
@@ -287,11 +288,11 @@ class StructuredExtractor:
                         table_data.append(row_data)
                 if table_data:
                     tables.append(table_data)
-        except Exception as e:
+        except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError) as e:
             logger.warning(f"Table extraction failed: {e}")
         return tables
 
-    async def extract_lists(self, page: "Page") -> list[str]:
+    async def extract_lists(self, page: Page) -> list[str]:
         """提取有序和无序列表内容。"""
         items = []
         try:
@@ -301,11 +302,11 @@ class StructuredExtractor:
                     text = (await el.inner_text()).strip()
                     if text and len(text) > 5:
                         items.append(text)
-        except Exception:
+        except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
             pass
         return items[:30]  # 最多 30 项
 
-    async def extract_json_ld(self, page: "Page") -> list[dict]:
+    async def extract_json_ld(self, page: Page) -> list[dict]:
         """提取 JSON-LD 结构化数据。"""
         json_lds = []
         try:
@@ -319,13 +320,13 @@ class StructuredExtractor:
                         json_lds.append(data)
                     elif isinstance(data, list):
                         json_lds.extend([d for d in data if isinstance(d, dict)])
-                except Exception:
+                except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                     pass
-        except Exception:
+        except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
             pass
         return json_lds
 
-    async def extract_metadata(self, page: "Page") -> dict[str, str]:
+    async def extract_metadata(self, page: Page) -> dict[str, str]:
         """提取页面元数据（SEO 信息）。"""
         metadata = {}
         meta_tags = [
@@ -343,11 +344,11 @@ class StructuredExtractor:
                     content = await el.get_attribute("content")
                     if content:
                         metadata[name] = content
-            except Exception:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                 continue
         return metadata
 
-    async def extract_links(self, page: "Page") -> list[dict[str, str]]:
+    async def extract_links(self, page: Page) -> list[dict[str, str]]:
         """提取所有外链（用于页面链式导航）。"""
         links = []
         try:
@@ -357,7 +358,7 @@ class StructuredExtractor:
                 text = (await a.inner_text()).strip()
                 if href and len(text) > 3:
                     links.append({"href": href, "text": text})
-        except Exception:
+        except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
             pass
         return links
 
@@ -422,17 +423,21 @@ Based on the content, respond with a JSON object containing:
 Return ONLY valid JSON."""
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
+            response, response_model, fallback_used = call_chat_with_fallback(
+                self.client,
+                self.model,
+                create_fallback_llm_client(),
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=512,
                 response_format={"type": "json_object"},
             )
+            if fallback_used:
+                self.model = response_model
             import json
             result = json.loads(response.choices[0].message.content or "{}")
             return result
-        except Exception as e:
+        except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError) as e:
             logger.warning(f"Page analysis failed: {e}")
             return {
                 "page_type": "unknown",
@@ -470,8 +475,8 @@ class BrowserAgent:
     def __init__(self):
         settings = get_settings()
         self.cfg = settings.browser
-        self._playwright: "Playwright | None" = None
-        self._browser: "Browser | None" = None
+        self._playwright: Playwright | None = None
+        self._browser: Browser | None = None
         self._semaphore = asyncio.Semaphore(self.cfg.pool_size)
         self._init_lock = asyncio.Lock()
         self._url_discovery = URLDiscovery()
@@ -479,7 +484,7 @@ class BrowserAgent:
         self._extractor = StructuredExtractor()
         self._analyzer = PageAnalyzer()
 
-    async def _ensure_browser(self) -> "Browser":
+    async def _ensure_browser(self) -> Browser:
         """Lazily initialize Playwright browser."""
         if self._browser is not None:
             return self._browser
@@ -503,7 +508,7 @@ class BrowserAgent:
                 self._browser = browser
                 logger.info("Browser Agent: Playwright browser initialized")
                 return browser
-            except Exception as e:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError) as e:
                 logger.error(f"Browser Agent: Failed to launch browser: {e}")
                 await playwright_instance.stop()
                 raise
@@ -513,14 +518,14 @@ class BrowserAgent:
         if self._browser:
             try:
                 await self._browser.close()
-            except Exception as e:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError) as e:
                 logger.warning(f"Browser cleanup error: {e}")
             self._browser = None
 
         if self._playwright:
             try:
                 await self._playwright.stop()
-            except Exception:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                 pass
             self._playwright = None
 
@@ -584,8 +589,8 @@ class BrowserAgent:
             title = await page.title() or url
 
             structured = await self._extractor.extract_all(page)
-            metadata = structured.get("metadata", {})
-            tables = structured.get("tables", [])
+            structured.get("metadata", {})
+            structured.get("tables", [])
 
             # ===== STEP 4: ANALYZE =====
             analysis = await self._analyzer.analyze_and_plan(content, user_query)
@@ -617,7 +622,7 @@ class BrowserAgent:
                 citation=citation.source_url,
             )
 
-        except Exception as e:
+        except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError) as e:
             logger.error(f"Browser Use failed for {query_or_url}: {e}")
             return self._fallback_result(query_or_url, error_message=str(e))
         finally:
@@ -625,7 +630,7 @@ class BrowserAgent:
 
     async def _navigate_with_retry(
         self,
-        page: "Page",
+        page: Page,
         url: str,
         retries: int = 2,
     ) -> None:
@@ -644,7 +649,7 @@ class BrowserAgent:
                 logger.warning(f"HTTP {response.status if response else 'None'}, retry {attempt+1}")
             except TimeoutError:
                 logger.warning(f"Navigation timeout, retry {attempt+1}")
-            except Exception as e:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError) as e:
                 logger.warning(f"Navigation error: {e}, retry {attempt+1}")
 
             if attempt < retries:
@@ -659,13 +664,13 @@ class BrowserAgent:
         - 是搜索查询 → 使用搜索引擎
         - 是主题词 → 使用 Wikipedia
         """
-        if query_or_url.startswith("http://") or query_or_url.startswith("https://"):
+        if query_or_url.startswith(("http://", "https://")):
             return query_or_url
 
         # 包含空格但不以 http 开头 → 可能是查询或主题
         return self._url_discovery.query_to_search_url(query_or_url)
 
-    async def _classify_page(self, page: "Page", url: str) -> PageType:
+    async def _classify_page(self, page: Page, url: str) -> PageType:
         """基于 URL 和页面内容分类页面类型。"""
         url_lower = url.lower()
 
@@ -687,7 +692,7 @@ class BrowserAgent:
     # Extraction Methods
     # ==============================================================
 
-    async def _extract_snippet(self, page: "Page", max_chars: int) -> str:
+    async def _extract_snippet(self, page: Page, max_chars: int) -> str:
         """Snippet: 仅使用 meta 标签，快速低 token。"""
         snippets: list[str] = []
 
@@ -705,12 +710,12 @@ class BrowserAgent:
                     content = await el.get_attribute("content")
                     if content:
                         snippets.append(content.strip())
-            except Exception:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                 continue
 
         return " | ".join(snippets)[:max_chars]
 
-    async def _extract_skim(self, page: "Page", max_chars: int) -> str:
+    async def _extract_skim(self, page: Page, max_chars: int) -> str:
         """Skim: 提取主要内容段落。"""
         content_parts: list[str] = []
 
@@ -731,7 +736,7 @@ class BrowserAgent:
                             break
                 if content_parts:
                     break
-            except Exception:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                 continue
 
         # 降级：提取 body 文本
@@ -741,13 +746,13 @@ class BrowserAgent:
                 if body:
                     text = await body.inner_text()
                     content_parts = [text[:max_chars]]
-            except Exception:
+            except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
                 pass
 
         result = "\n\n".join(content_parts)
         return result[:max_chars]
 
-    async def _extract_deep(self, page: "Page", max_chars: int) -> str:
+    async def _extract_deep(self, page: Page, max_chars: int) -> str:
         """Deep: 完整内容提取，包括标题、段落、列表、表格。"""
         parts: list[str] = []
 
@@ -761,7 +766,7 @@ class BrowserAgent:
                     level = min(int(tag[1]), 4)
                     prefix = "#" * level
                     parts.append(f"{prefix} {text}")
-        except Exception:
+        except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
             pass
 
         # 段落
@@ -771,7 +776,7 @@ class BrowserAgent:
                 text = (await p.inner_text()).strip()
                 if len(text) > 30:
                     parts.append(text)
-        except Exception:
+        except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
             pass
 
         # 列表
@@ -782,7 +787,7 @@ class BrowserAgent:
                     text = (await li.inner_text()).strip()
                     if len(text) > 10:
                         parts.append(f"- {text}")
-        except Exception:
+        except (OSError, PlaywrightError, RuntimeError, TypeError, ValueError):
             pass
 
         result = "\n\n".join(parts)
@@ -818,7 +823,7 @@ class BrowserAgent:
     def execute(self, plan_steps: list[PlanStep]) -> list[BrowserResult]:
         """多步入口：处理 PlanStep 列表。"""
         from app.config import get_settings
-        settings = get_settings()
+        get_settings()
         results: list[BrowserResult] = []
 
         for step in plan_steps:

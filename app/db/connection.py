@@ -8,10 +8,15 @@ Redis for session cache and LLM response cache.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import asyncpg
 
 from app.config import get_settings
 from app.db.text_search import regconfig_sql_literal, resolve_text_search_config
+
+if TYPE_CHECKING:
+    import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +34,6 @@ async def init_db() -> asyncpg.Pool:
     if _db_pool is not None:
         return _db_pool
 
-    import asyncpg
     settings = get_settings()
     pool = await asyncpg.create_pool(
         settings.database.url,
@@ -71,7 +75,7 @@ async def init_db() -> asyncpg.Pool:
                 CREATE INDEX IF NOT EXISTS idx_documents_fts
                 ON documents USING gin (to_tsvector({fts_config_sql}, content))
             """)
-        except Exception as exc:
+        except (OSError, RuntimeError, asyncpg.PostgresError) as exc:
             logger.warning(
                 "Failed to create FTS index with config '%s', falling back to 'simple': %s",
                 _fts_config,
@@ -344,6 +348,75 @@ async def init_db() -> asyncpg.Pool:
             ON skill_content (skill_id, version DESC)
         """)
 
+        # Security state is authoritative in PostgreSQL. Redis remains a cache and
+        # must never decide whether a credential is valid.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS auth_principals (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                username VARCHAR(120) NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                session_version INTEGER NOT NULL DEFAULT 1,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS auth_sessions (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                principal_id UUID NOT NULL REFERENCES auth_principals(id) ON DELETE CASCADE,
+                token_hash CHAR(64) NOT NULL UNIQUE,
+                session_version INTEGER NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                revoked_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                last_used_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS auth_api_tokens (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                principal_id UUID NOT NULL REFERENCES auth_principals(id) ON DELETE CASCADE,
+                token_hash CHAR(64) NOT NULL UNIQUE,
+                token_prefix VARCHAR(16) NOT NULL,
+                label VARCHAR(120) NOT NULL,
+                session_version INTEGER NOT NULL,
+                expires_at TIMESTAMP,
+                revoked_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                last_used_at TIMESTAMP
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_auth_sessions_valid
+            ON auth_sessions (token_hash, expires_at) WHERE revoked_at IS NULL
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_auth_api_tokens_valid
+            ON auth_api_tokens (token_hash) WHERE revoked_at IS NULL
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS capability_health_audit (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                capability VARCHAR(80) NOT NULL,
+                state VARCHAR(20) NOT NULL,
+                reason_code VARCHAR(120),
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+
+        # Keep a single explicit owner even in self-hosted mode. New code must
+        # always scope data by it, which makes later multi-user migration safe.
+        for table in ("documents", "document_sources", "research_sessions", "tool_call_audit", "approval_requests", "system_config", "skill_meta"):
+            await conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS owner_id UUID")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_owner ON documents (owner_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_document_sources_owner ON document_sources (owner_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_research_sessions_owner ON research_sessions (owner_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_skill_meta_owner ON skill_meta (owner_id)")
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_skill_meta_owner_active ON skill_meta (owner_id, is_deleted, enabled)"
+        )
+
     _db_pool = pool
     logger.info("Database initialized successfully")
     return pool
@@ -351,7 +424,6 @@ async def init_db() -> asyncpg.Pool:
 
 async def get_db_pool() -> asyncpg.Pool:
     """Get the database connection pool."""
-    global _db_pool
     if _db_pool is None:
         return await init_db()
     return _db_pool
@@ -412,6 +484,7 @@ class Document:
         source_type: str = "manual",
         chunk_index: int = 0,
         chunk_count: int = 1,
+        owner_id: str | None = None,
     ) -> str:
         """Create a new document and return its ID."""
         pool = await get_db_pool()
@@ -421,9 +494,9 @@ class Document:
                 INSERT INTO documents (
                     source_id, source_name, source_type,
                     chunk_index, chunk_count,
-                    content, metadata, embedding
+                    content, metadata, embedding, owner_id
                 )
-                VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::vector)
+                VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::vector, $9::uuid)
                 RETURNING id
                 """,
                 source_id,
@@ -434,12 +507,14 @@ class Document:
                 content,
                 metadata,
                 embedding,
+                owner_id,
             )
             return str(row["id"])
 
     @staticmethod
     async def search_by_vector(
         embedding: list[float],
+        owner_id: str,
         top_k: int = 10,
     ) -> list[dict[str, Any]]:
         """Search documents by vector similarity."""
@@ -450,20 +525,22 @@ class Document:
                 SELECT id, content, metadata,
                        1 - (embedding <=> $1::vector) AS similarity
                 FROM documents
+                WHERE owner_id = $2::uuid
                 ORDER BY embedding <=> $1::vector
-                LIMIT $2
+                LIMIT $3
                 """,
                 embedding,
+                owner_id,
                 top_k,
             )
             return [dict(r) for r in rows]
 
     @staticmethod
-    async def count() -> int:
+    async def count(owner_id: str) -> int:
         """Count total documents."""
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT COUNT(*) FROM documents")
+            row = await conn.fetchrow("SELECT COUNT(*) FROM documents WHERE owner_id = $1::uuid", owner_id)
             return int(row["count"])
 
 
@@ -482,6 +559,7 @@ class DocumentSource:
         chunk_size: int = 400,
         chunk_overlap: int = 80,
         metadata: dict[str, Any] | None = None,
+        owner_id: str | None = None,
     ) -> str:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -489,9 +567,9 @@ class DocumentSource:
                 """
                 INSERT INTO document_sources (
                     name, group_name, source_type, file_name, file_ext,
-                    original_text, chunk_size, chunk_overlap, metadata
+                    original_text, chunk_size, chunk_overlap, metadata, owner_id
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::uuid)
                 RETURNING id
                 """,
                 name,
@@ -503,5 +581,6 @@ class DocumentSource:
                 chunk_size,
                 chunk_overlap,
                 metadata or {},
+                owner_id,
             )
             return str(row["id"])

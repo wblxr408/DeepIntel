@@ -11,9 +11,14 @@ import logging
 from typing import TYPE_CHECKING
 
 from app.config import get_settings
-from app.guardrails import build_guardrail_decision, build_prompt_profile_message
 from app.graph.state import Evidence
-from app.llm_client import collect_usage_metrics
+from app.guardrails import build_guardrail_decision, build_prompt_profile_message
+from app.llm_client import (
+    call_chat_with_fallback,
+    collect_usage_metrics,
+    create_fallback_llm_client,
+)
+from app.security.prompt_security import untrusted_context
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -82,8 +87,6 @@ Return a JSON object with these fields:
         logger.info(f"Analyst: analyzing {len(evidence_list)} evidence items")
         decision = build_guardrail_decision(user_query)
         system_prompt = f"{build_prompt_profile_message(decision, user_query)}\n\n{self.SYSTEM_PROMPT}"
-        if skill_prompt:
-            system_prompt = f"{system_prompt}\n\n## Active Skill Context\n{skill_prompt.strip()}"
         if analyst_hints:
             system_prompt = (
                 f"{system_prompt}\n\n## Analyst Skill Instructions\n"
@@ -104,6 +107,8 @@ Return a JSON object with these fields:
                 "role": "user",
                 "content": f"""Research Question: {user_query}
 
+{untrusted_context('skill_content', skill_prompt or '') if skill_prompt else ''}
+
 Collected Evidence:
 {formatted_evidence}
 
@@ -114,16 +119,20 @@ Also provide the structured JSON output."""
         ]
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
+            response, response_model, fallback_used = call_chat_with_fallback(
+                self.client,
+                self.model,
+                create_fallback_llm_client(),
                 messages=messages,
                 temperature=0.4,
                 max_tokens=4096,
             )
+            if fallback_used:
+                self.model = response_model
             content = response.choices[0].message.content
             self.last_usage = collect_usage_metrics(
                 response=response,
-                model=self.model,
+                model=response_model,
                 messages=messages,
                 completion_text=content,
             )
@@ -152,7 +161,7 @@ Also provide the structured JSON output."""
             # Fallback: return the full response
             return content
 
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.error(f"Analyst error: {e}")
             self.last_usage = None
             return self._fallback_analysis(user_query, evidence_list)

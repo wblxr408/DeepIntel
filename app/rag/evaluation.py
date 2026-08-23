@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from app.agents.analyst import AnalystAgent
-from app.llm_client import LLMClientWrapper
 from app.graph.state import AgentType, Evidence
+from app.llm_client import LLMClientWrapper
 from metrics.rag_evaluation.collector import RAGEvaluationCollector
 
 logger = logging.getLogger(__name__)

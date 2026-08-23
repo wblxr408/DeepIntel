@@ -7,12 +7,8 @@ Provides DuckDuckGo search as a LangChain-compatible tool.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from langchain_core.tools import tool
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +36,7 @@ def duckduckgo_search(query: str) -> str:
 
         return json.dumps(results, ensure_ascii=False, indent=2)
 
-    except Exception as e:
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
         logger.error(f"DuckDuckGo search error: {e}")
         return json.dumps({"error": str(e)})
 

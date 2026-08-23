@@ -4,11 +4,12 @@ Integration tests for the complete research workflow.
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.graph.state import ResearchState, create_initial_state, StepStatus
+
+import pytest
+
+from app.graph.state import StepStatus, create_initial_state
 
 
 class TestResearchWorkflowIntegration:
@@ -89,7 +90,7 @@ class TestResearchWorkflowIntegration:
 
     def test_plan_step_status_transitions(self):
         """Test that plan step status transitions work correctly."""
-        from app.graph.state import PlanStep, StepStatus
+        from app.graph.state import PlanStep
 
         step = PlanStep(
             description="Test step",
@@ -131,7 +132,7 @@ class TestAgentCollaboration:
 
     def test_analyst_validates_evidence(self, analyst_agent: MagicMock):
         """Test that analyst can process evidence."""
-        from app.graph.state import Evidence, AgentType
+        from app.graph.state import AgentType, Evidence
 
         evidence = [
             Evidence(
@@ -150,7 +151,7 @@ class TestAgentCollaboration:
 
     def test_reflection_detects_hallucinations(self, reflection_agent: MagicMock):
         """Test that reflection agent can detect hallucinations."""
-        from app.graph.state import Evidence, AgentType
+        from app.graph.state import AgentType, Evidence
 
         evidence = [
             Evidence(
@@ -858,7 +859,6 @@ class TestAPIEndpoints:
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
         """Test health check endpoint."""
-        from fastapi.testclient import TestClient
         from app.main import app
 
         # This would need the app to be properly configured
@@ -877,7 +877,9 @@ class TestAPIEndpoints:
         assert req.max_revision == 3
 
         # Query too short
-        with pytest.raises(Exception):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
             ResearchRequest(query="Hi")  # min_length=5
 
     def test_research_status_model(self):
@@ -951,7 +953,7 @@ class TestAPIEndpoints:
 
     @pytest.mark.asyncio
     async def test_create_research_returns_session_budget_thresholds(self):
-        from app.api.research import create_research, ResearchRequest
+        from app.api.research import ResearchRequest, create_research
 
         class FakeConn:
             async def execute(self, *args, **kwargs):
@@ -995,7 +997,7 @@ class TestAPIEndpoints:
 
     @pytest.mark.asyncio
     async def test_create_research_passes_skill_scope_and_overrides_to_registry(self):
-        from app.api.research import create_research, ResearchRequest
+        from app.api.research import ResearchRequest, create_research
 
         class FakeConn:
             async def execute(self, *args, **kwargs):

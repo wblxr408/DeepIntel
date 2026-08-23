@@ -5,7 +5,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
 ALLOWED_SKILL_TOOLS = {"search", "browser", "rag", "mcp"}
 SKILL_SCOPE_VALUES = {"global", "tenant", "project"}
 
@@ -76,7 +75,7 @@ class SkillMetadata(BaseModel):
         return cleaned or None
 
     @model_validator(mode="after")
-    def validate_scope_binding(self) -> "SkillMetadata":
+    def validate_scope_binding(self) -> SkillMetadata:
         if self.scope == "global" and (self.tenant_id or self.project_id):
             raise ValueError("global skill must not set tenant_id or project_id")
         if self.scope == "tenant":
@@ -113,7 +112,7 @@ class SkillMetaRecord(BaseModel):
     def version(self) -> int:
         return self.metadata.version
 
-    def to_runtime_view(self, *, include_content: bool = False, content: SkillContentRecord | None = None) -> "SkillRuntimeView":
+    def to_runtime_view(self, *, include_content: bool = False, content: SkillContentRecord | None = None) -> SkillRuntimeView:
         return SkillRuntimeView(
             id=self.id,
             name=self.metadata.name,
@@ -165,7 +164,7 @@ class SkillRecord(BaseModel):
     def is_deleted(self) -> bool:
         return self.meta.is_deleted
 
-    def to_runtime_view(self) -> "SkillRuntimeView":
+    def to_runtime_view(self) -> SkillRuntimeView:
         return self.meta.to_runtime_view(include_content=True, content=self.content)
 
 

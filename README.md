@@ -238,6 +238,12 @@ npm run dev
 docker compose up -d
 ```
 
+生产部署前必须从 `.env.example` 创建私有 `.env`，并设置唯一的
+`SECURITY_ENCRYPTION_KEY`、`SECURITY_ENVIRONMENT=production`、
+`SECURITY_SECURE_COOKIES=true` 和精确的 `API_CORS_ORIGINS`。生产模式会在
+启动时拒绝示例密钥、缺失密钥、非安全 Cookie 或 `*` CORS；反向代理的 HTTPS
+不替代应用层登录。持久化密钥加密仅保护数据库/备份泄露，不保护已被攻陷的运行进程。
+
 Windows 也可以用：
 
 ```powershell

@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from app.config import get_settings
 from app.graph.state import PlanStep, SearchResult
+from app.llm_client import call_chat_with_fallback, create_fallback_llm_client
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -76,7 +77,7 @@ Return JSON with a "queries" array of strings."""
                     all_results.extend(results)
                     time.sleep(0.5)  # Rate limiting
 
-            except Exception as e:
+            except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
                 logger.error(f"Search step error for '{step.target_query}': {e}")
                 continue
 
@@ -95,20 +96,24 @@ Return JSON with a "queries" array of strings."""
         ]
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
+            response, response_model, fallback_used = call_chat_with_fallback(
+                self.client,
+                self.model,
+                create_fallback_llm_client(),
                 messages=messages,
                 temperature=0.3,
                 max_tokens=512,
                 response_format={"type": "json_object"},
             )
+            if fallback_used:
+                self.model = response_model
             content = response.choices[0].message.content
             if content:
                 data = json.loads(content)
                 queries = data.get("queries", [])
                 if queries:
                     return queries[:5]
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
             logger.warning(f"Query expansion failed: {e}")
 
         return [query]  # Fallback to original
@@ -146,7 +151,7 @@ Return JSON with a "queries" array of strings."""
 
             return self._parse_duckduckgo_html(response.text, query)
 
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.warning(f"DuckDuckGo HTML search failed for '{query}': {e}")
             return []
 
@@ -190,7 +195,7 @@ Return JSON with a "queries" array of strings."""
 
             return results
 
-        except Exception as e:
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
             logger.warning(f"DuckDuckGo instant answer failed for '{query}': {e}")
             return []
 
@@ -255,7 +260,7 @@ Return JSON with a "queries" array of strings."""
             raw_url = f"https:{raw_url}"
         parsed = urlparse(raw_url)
         qs = parse_qs(parsed.query)
-        if "uddg" in qs and qs["uddg"]:
+        if qs.get("uddg"):
             return unquote(qs["uddg"][0])
         return raw_url
 
@@ -271,9 +276,7 @@ Return JSON with a "queries" array of strings."""
         """Remove duplicate URLs, keeping highest-scoring entry."""
         seen: dict[str, SearchResult] = {}
         for r in results:
-            if r.url and r.url not in seen:
-                seen[r.url] = r
-            elif r.url in seen and r.relevance_score > seen[r.url].relevance_score:
+            if r.url and r.url not in seen or r.url in seen and r.relevance_score > seen[r.url].relevance_score:
                 seen[r.url] = r
         return list(seen.values())
 

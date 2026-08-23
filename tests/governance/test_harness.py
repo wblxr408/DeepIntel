@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-import pytest
-
+from app.core.time import utc_now_naive
 from app.governance.harness import HarnessSupervisor
 
 
 def test_harness_initializes_v2_state(tmp_path):
-    supervisor = HarnessSupervisor(str(tmp_path))
+    HarnessSupervisor(str(tmp_path))
 
     data = json.loads((tmp_path / "harness-tasks.json").read_text(encoding="utf-8"))
 
@@ -107,7 +106,7 @@ def test_harness_detects_expired_lease(tmp_path):
         "runtime_status": "running",
         "lease": {
             "claimed_by": "worker-a",
-            "lease_expires_at": (datetime.utcnow() - timedelta(seconds=1)).isoformat(),
+            "lease_expires_at": (utc_now_naive() - timedelta(seconds=1)).isoformat(),
         },
     }
 
@@ -116,7 +115,7 @@ def test_harness_detects_expired_lease(tmp_path):
 
 def test_harness_summary_counts_blocked_and_expired_leases(tmp_path):
     supervisor = HarnessSupervisor(str(tmp_path))
-    expired = (datetime.utcnow() - timedelta(seconds=1)).isoformat()
+    expired = (utc_now_naive() - timedelta(seconds=1)).isoformat()
     data = supervisor._load()
     data["tasks"] = [
         {"id": "failed", "runtime_status": "terminal_failed"},
@@ -159,7 +158,7 @@ def test_harness_state_lock_removes_stale_lock(tmp_path):
     (lock_dir / "owner.json").write_text(
         json.dumps({
             "pid": 999999,
-            "created_at": (datetime.utcnow() - timedelta(minutes=10)).isoformat(),
+            "created_at": (utc_now_naive() - timedelta(minutes=10)).isoformat(),
         }),
         encoding="utf-8",
     )

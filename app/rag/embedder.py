@@ -13,6 +13,9 @@ import torch
 
 from app.config import get_settings
 
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,7 +47,7 @@ class Embedder:
                     "sentence_transformers is required to load the embedder model"
                 ) from exc
             self._model = SentenceTransformer(self.model_name, device=self.device)
-            logger.info(f"Embedder: model loaded successfully")
+            logger.info("Embedder: model loaded successfully")
         return self._model
 
     async def embed(self, text: str) -> list[float]:

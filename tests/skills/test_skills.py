@@ -1,15 +1,20 @@
-from datetime import datetime
 from fnmatch import fnmatch
 
 import pytest
-
 from pydantic import ValidationError
 
-from app.skills.models import SkillContentRecord, SkillMetaRecord, SkillMetadata, SkillRecord
+from app.core.time import utc_now_naive
+from app.skills.models import (
+    SkillContentRecord,
+    SkillMetadata,
+    SkillMetaRecord,
+    SkillRecord,
+)
 from app.skills.parser import derive_coarse_terms, parse_skill_markdown
+
+TEST_OWNER_ID = "00000000-0000-0000-0000-000000000099"
 from app.skills.registry import SkillRegistry
 from app.skills.service import update_skill
-
 
 SAMPLE_SKILL = """---
 name: Finance Research
@@ -50,7 +55,7 @@ def _build_skill(
     markdown: str = SAMPLE_SKILL,
 ):
     metadata, body, sections = parse_skill_markdown(markdown)
-    now = datetime.utcnow()
+    now = utc_now_naive()
     meta = SkillMetaRecord(
         id=skill_id,
         metadata=metadata,
@@ -130,7 +135,7 @@ async def test_skill_registry_matches_and_merges_context():
     meta = skill.meta
     content = skill.content
 
-    registry = SkillRegistry()
+    registry = SkillRegistry(owner_id=TEST_OWNER_ID)
     registry._meta_by_id = {meta.id: meta}
     registry._rebuild_indexes([meta])
     registry._remember_content(content)
@@ -172,7 +177,7 @@ allowed_tools:
 Scoped skill.
 """
     skill = _build_skill("00000000-0000-0000-0000-000000000010", scoped_markdown)
-    registry = SkillRegistry()
+    registry = SkillRegistry(owner_id=TEST_OWNER_ID)
     registry._meta_by_id = {skill.id: skill.meta}
     registry._rebuild_indexes([skill.meta])
     registry._remember_content(skill.content)
@@ -195,7 +200,7 @@ async def test_update_skill_bumps_version_and_rewrites_markdown(monkeypatch):
     existing_markdown = SAMPLE_SKILL.replace("version: 1", "version: 3", 1)
     existing_skill = _build_skill(skill_id, existing_markdown)
     requested_markdown = SAMPLE_SKILL
-    requested_metadata, requested_body, requested_sections = parse_skill_markdown(requested_markdown)
+    requested_metadata, _requested_body, requested_sections = parse_skill_markdown(requested_markdown)
     captured: dict[str, str | int] = {}
 
     class _FakeTransaction:
@@ -255,7 +260,8 @@ async def test_update_skill_bumps_version_and_rewrites_markdown(monkeypatch):
         def acquire(self):
             return _FakeConn()
 
-    async def _fake_get_skill_content(requested_skill_id: str, requested_version: int):
+    async def _fake_get_skill_content(requested_skill_id: str, requested_version: int, owner_id: str):
+        assert owner_id == TEST_OWNER_ID
         stored_markdown = str(captured["stored_markdown"])
         _, body, sections = parse_skill_markdown(stored_markdown)
         return SkillContentRecord(
@@ -270,13 +276,14 @@ async def test_update_skill_bumps_version_and_rewrites_markdown(monkeypatch):
             created_at=existing_skill.created_at,
         )
 
-    async def _fake_get_skill_meta_by_id(requested_skill_id: str):
+    async def _fake_get_skill_meta_by_id(requested_skill_id: str, owner_id: str):
         assert requested_skill_id == skill_id
+        assert owner_id == TEST_OWNER_ID
         return existing_skill.meta
 
-    async def _fake_get_skill_meta_by_slug(slug: str):
+    async def _fake_get_skill_meta_by_slug(slug: str, owner_id: str):
         assert slug == requested_metadata.slug
-        return None
+        assert owner_id == TEST_OWNER_ID
 
     async def _fake_get_db_pool():
         return _FakePool()
@@ -286,7 +293,7 @@ async def test_update_skill_bumps_version_and_rewrites_markdown(monkeypatch):
     monkeypatch.setattr("app.skills.service.get_db_pool", _fake_get_db_pool)
     monkeypatch.setattr("app.skills.service.get_skill_content", _fake_get_skill_content)
 
-    updated_skill = await update_skill(skill_id, requested_markdown)
+    updated_skill = await update_skill(skill_id, requested_markdown, TEST_OWNER_ID)
 
     assert captured["next_version"] == 4
     assert captured["stored_version"] == 4
@@ -298,7 +305,7 @@ async def test_update_skill_bumps_version_and_rewrites_markdown(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_registry_upsert_deindexes_old_terms_and_refreshes_match_cache():
-    registry = SkillRegistry()
+    registry = SkillRegistry(owner_id=TEST_OWNER_ID)
     original_skill = _build_skill("00000000-0000-0000-0000-000000000030")
     registry._meta_by_id = {original_skill.id: original_skill.meta}
     registry._rebuild_indexes([original_skill.meta])
@@ -385,7 +392,7 @@ async def test_registry_truncates_to_top_k_and_merges_allowed_tools(monkeypatch)
             SAMPLE_SKILL.replace("slug: finance-research", "slug: finance-c").replace("priority: 200", "priority: 100"),
         ),
     ]
-    registry = SkillRegistry()
+    registry = SkillRegistry(owner_id=TEST_OWNER_ID)
     registry._rebuild_indexes([skill.meta for skill in skills])
     for skill in skills:
         registry._remember_content(skill.content)
@@ -401,7 +408,7 @@ async def test_registry_truncates_to_top_k_and_merges_allowed_tools(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_resolved_skill_snapshot_keeps_version_and_prompt_after_registry_update():
-    registry = SkillRegistry()
+    registry = SkillRegistry(owner_id=TEST_OWNER_ID)
     original_skill = _build_skill("00000000-0000-0000-0000-000000000110")
     registry._rebuild_indexes([original_skill.meta])
     registry._remember_content(original_skill.content)
@@ -459,10 +466,10 @@ async def test_get_skill_record_can_use_meta_l2_cache(monkeypatch):
     async def _fake_get_redis():
         return fake_redis
 
-    async def _fail_get_skill_meta_by_id(skill_id: str):
+    async def _fail_get_skill_meta_by_id(skill_id: str, owner_id: str):
         raise AssertionError(f"DB fallback should not be used for meta {skill_id}")
 
-    async def _fake_get_skill_content(skill_id: str, version: int):
+    async def _fake_get_skill_content(skill_id: str, version: int, owner_id: str):
         assert skill_id == skill.id
         assert version == skill.metadata.version
         return skill.content
@@ -471,7 +478,7 @@ async def test_get_skill_record_can_use_meta_l2_cache(monkeypatch):
     monkeypatch.setattr("app.skills.registry.get_skill_meta_by_id", _fail_get_skill_meta_by_id)
     monkeypatch.setattr("app.skills.registry.get_skill_content", _fake_get_skill_content)
 
-    registry = SkillRegistry()
+    registry = SkillRegistry(owner_id=TEST_OWNER_ID)
     await registry._cache_meta_l2(skill.meta)
 
     loaded_skill = await registry.get_skill_record(skill.id)
